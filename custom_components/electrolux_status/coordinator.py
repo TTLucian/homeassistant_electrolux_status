@@ -91,23 +91,30 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Electrolux appliance state updated %s", json.dumps(data))
         # Update reported data
         appliances: Any = self.data.get("appliances", None)
-        for appliance_id, appliance_data in data.items():
+        # _LOGGER.debug("appliances\n %s", appliances.get_appliances())
+        if data and "applianceId" in data:
+            appliance_id = data["applianceId"]
             appliance = appliances.get_appliance(appliance_id)
-            appliance.update_reported_data(appliance_data)
-        self.async_set_updated_data(self.data)
-        # Bug in Electrolux library : no data sent when appliance cycle is over
-        for appliance_id, appliance_data in data.items():
-            do_deferred = False
-            for key, value in appliance_data.items():
-                if key in TIME_ENTITIES_TO_UPDATE:
-                    if value is not None and 0 < value <= 1:
-                        do_deferred = True
-                        break
-            if do_deferred:
-                # Track the deferred task to prevent memory leaks
-                task = asyncio.create_task(self.deferred_update(appliance_id, 70))
-                self._deferred_tasks.add(task)
-                task.add_done_callback(self._deferred_tasks.discard)
+            appliance.update_reported_data({data["property"]: data["value"]})
+            self.async_set_updated_data(self.data)
+        else:
+            for appliance_id, appliance_data in data.items():
+                appliance = appliances.get_appliance(appliance_id)
+                appliance.update_reported_data(appliance_data)
+            self.async_set_updated_data(self.data)
+            # Bug in Electrolux library : no data sent when appliance cycle is over
+            for appliance_id, appliance_data in data.items():
+                do_deferred = False
+                for key, value in appliance_data.items():
+                    if key in TIME_ENTITIES_TO_UPDATE:
+                        if value is not None and 0 < value <= 1:
+                            do_deferred = True
+                            break
+                if do_deferred:
+                    # Track the deferred task to prevent memory leaks
+                    task = asyncio.create_task(self.deferred_update(appliance_id, 70))
+                    self._deferred_tasks.add(task)
+                    task.add_done_callback(self._deferred_tasks.discard)
 
     def listen_websocket(self):
         """Listen for state changes."""
