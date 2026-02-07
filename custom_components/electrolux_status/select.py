@@ -81,7 +81,7 @@ class ElectroluxSelect(ElectroluxEntity, SelectEntity):
         if values_dict:
             for value in values_dict:
                 entry: dict[str, Any] | None = values_dict.get(value)
-                if not entry or "disabled" in entry:
+                if entry and "disabled" in entry:
                     continue
 
                 label = self.format_label(value)
