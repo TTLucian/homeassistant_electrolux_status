@@ -1,5 +1,6 @@
 """Number platform for Electrolux Status."""
 
+import asyncio
 import logging
 from typing import Any, cast
 
@@ -128,6 +129,9 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
                     if max_val is not None:
                         if self.unit == UnitOfTime.SECONDS:
                             max_val = time_seconds_to_minutes(cast(float, max_val))
+                        elif self.unit == UnitOfTime.MINUTES:
+                            # Program capabilities are in seconds, convert to minutes
+                            max_val = time_seconds_to_minutes(cast(float, max_val))
                         return float(cast(float, max_val))
 
         # Fallback to global capability
@@ -164,6 +168,9 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
                     if min_val is not None:
                         if self.unit == UnitOfTime.SECONDS:
                             min_val = time_seconds_to_minutes(cast(float, min_val))
+                        elif self.unit == UnitOfTime.MINUTES:
+                            # Program capabilities are in seconds, convert to minutes
+                            min_val = time_seconds_to_minutes(cast(float, min_val))
                         return float(cast(float, min_val))
 
         # Fallback to global capability
@@ -197,6 +204,9 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
                     step_val = program_caps["step"]
                     if step_val is not None:
                         if self.unit == UnitOfTime.SECONDS:
+                            step_val = time_seconds_to_minutes(cast(float, step_val))
+                        elif self.unit == UnitOfTime.MINUTES:
+                            # Program capabilities are in seconds, convert to minutes
                             step_val = time_seconds_to_minutes(cast(float, step_val))
                         return float(cast(float, step_val))
 
@@ -366,6 +376,12 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
             ) from ex
         _LOGGER.debug("Electrolux set value result %s", result)
         await self.coordinator.async_request_refresh()
+
+        # For temperature changes, the appliance may change program asynchronously
+        # Add a delay and refresh again to ensure program state is updated
+        if "temperature" in self.entity_attr.lower():
+            await asyncio.sleep(2)
+            await self.coordinator.async_request_refresh()
 
     @property
     def native_unit_of_measurement(self) -> str | None:

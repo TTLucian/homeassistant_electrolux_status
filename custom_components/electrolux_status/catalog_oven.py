@@ -164,9 +164,9 @@ CATALOG_OVEN: dict[str, ElectroluxDevice] = {
     "targetDuration": ElectroluxDevice(
         capability_info={
             "access": "readwrite",
-            "max": 86340,
+            "max": 1439,
             "min": 0,
-            "step": 60,
+            "step": 1,
             "type": "number",
         },
         device_class=SensorDeviceClass.DURATION,
