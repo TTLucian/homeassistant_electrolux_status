@@ -22,6 +22,9 @@ FRIENDLY_NAMES = {
     "foodProbeInsertionState": "Food Probe",
     "ovcleaning_ended": "Cleaning Status",
     "ovfood_probe_end_of_cooking": "Probe End of Cooking",
+    "connectivityState": "Connectivity State",
+    "executionState": "Execution State",
+    "applianceState": "Appliance State",
 }
 
 
@@ -99,7 +102,7 @@ class ElectroluxSensor(ElectroluxEntity, SensorEntity):
                 live_value = self.capability.get("foodProbeSupported")
                 if live_value is not None:
                     value = live_value
-            elif self.entity_key == "display_food_probe_temperature_c":
+            elif self.entity_key == "displayfoodprobetemperaturec":
                 # Point to targetFoodProbeTemperatureC from reported properties
                 live_value = self.reported_state.get("targetFoodProbeTemperatureC")
                 if live_value is not None:

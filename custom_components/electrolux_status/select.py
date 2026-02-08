@@ -163,7 +163,10 @@ class ElectroluxSelect(ElectroluxEntity, SelectEntity):
             .get("reported", {})
             .get("remoteControl")
         )
-        if remote_control is not None and "ENABLED" not in str(remote_control):
+        # Check for disabled states
+        if remote_control is not None and (
+            "ENABLED" not in str(remote_control) or "DISABLED" in str(remote_control)
+        ):
             _LOGGER.warning(
                 "Cannot select option %s for appliance %s: remote control is %s",
                 option,

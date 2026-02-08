@@ -29,8 +29,8 @@ A comprehensive Home Assistant integration for Electrolux appliances using the o
 
 ### How to Help:
 1. **Test with your appliances** - Try the integration with different device types (ovens, washers, fridges, etc.)
-2. **Report issues** - If something doesn't work, [create an issue](https://github.com/albaintor/homeassistant_electrolux_status/issues) with details
-3. **Share your experience** - Let us know which appliances work well in the [discussions](https://github.com/albaintor/homeassistant_electrolux_status/discussions)
+2. **Report issues** - If something doesn't work, [create an issue](https://github.com/TTLucian/homeassistant_electrolux_status/issues) with details
+3. **Share your experience** - Let us know which appliances work well in the [discussions](https://github.com/TTLucian/homeassistant_electrolux_status/discussions)
 4. **Test in different regions** - Help verify compatibility across EMEA, APAC, LATAM, and NA
 
 **Your feedback is crucial** to ensure the integration works reliably for everyone!
@@ -52,11 +52,18 @@ This integration has been completely refactored to use the official Electrolux G
 - Comprehensive error handling and safety validations
 - Modern async/await patterns and improved code architecture
 
+## 🧪 Testing Scripts
+
+This repository includes comprehensive testing scripts to help you verify appliance compatibility and test API functionality before installing the integration. These scripts allow direct interaction with the Electrolux API to inspect your appliances and test commands.
+
+📖 **[Testing Scripts Documentation](scripts/TESTING_SCRIPTS_README.md)** - Complete guide for using the testing tools
+
 | Contributors | Support Link |
 |-------------|-------------|
+| [TTLucian](https://github.com/TTLucian) | [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/TTLucian) |
+
 | [albaintor](https://github.com/albaintor) | [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/albaintor) |
 | [kingy444](https://github.com/kingy444) | [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/kingy444) |
-| [TTLucian](https://github.com/TTLucian) | [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/TTLucian) |
 
 ## Prerequisites
 
@@ -228,7 +235,7 @@ All appliances must be:
 
 ### HACS Installation (Recommended)
 
-1. Add this repository to HACS: `https://github.com/albaintor/homeassistant_electrolux_status`
+1. Add this repository to HACS: `https://github.com/TTLucian/homeassistant_electrolux_status`
 2. Search for "Electrolux" in HACS
 3. Click Install
 4. Restart Home Assistant
@@ -369,6 +376,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/albaintor/homeassistant_electrolux_status/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/albaintor/homeassistant_electrolux_status/discussions)
+- **Issues**: [GitHub Issues](https://github.com/TTLucian/homeassistant_electrolux_status/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/TTLucian/homeassistant_electrolux_status/discussions)
 - **Documentation**: [Electrolux Developer Portal](https://developer.electrolux.one/)

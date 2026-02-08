@@ -1,7 +1,7 @@
 """Number platform for Electrolux Status."""
 
 import logging
-from typing import cast
+from typing import Any, cast
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
@@ -54,16 +54,30 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
 
     @property
     def mode(self) -> str:
-        """Return the mode for the number entity (slider for better UX)."""
+        """Return the mode for the number entity."""
+        # Use box input for unsupported entities (shows "NA")
+        if not self._is_supported_by_program():
+            return "box"
+        # Use box input for start time (max 1439 minutes = 23:59)
+        if self.entity_attr == "startTime":
+            return "box"
+        # Use slider for other controls with step constraints
         return "slider"
 
     @property
     def native_value(self) -> float | None:
         """Return the value reported by the number."""
+        if not self._is_supported_by_program():
+            return None
+
         if self.unit == UnitOfTime.SECONDS:
             value = time_seconds_to_minutes(self.extract_value())
         else:
             value = self.extract_value()
+
+        # Special handling for targetDuration in minutes
+        if self.entity_attr == "targetDuration" and self.unit == UnitOfTime.MINUTES:
+            value = value / 60 if value else 0
 
         if not value:
             value = self.capability.get("default", None)
@@ -76,6 +90,15 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
         elif isinstance(self.unit, UnitOfTime):
             # Electrolux bug - prevent negative/disabled timers
             value = max(value, 0)
+
+        # Clamp value to current program-specific min/max range
+        min_val = self.native_min_value
+        max_val = self.native_max_value
+        if min_val is not None and value < min_val:
+            value = min_val
+        if max_val is not None and value > max_val:
+            value = max_val
+
         self._cached_value = value
         return value
 
@@ -93,7 +116,7 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
             appliance_data = self.get_appliance.data
             if hasattr(appliance_data, "capabilities") and appliance_data.capabilities:
                 # Use normalized entity key to match program capabilities
-                entity_key = self.entity_attr.lower().replace("fppn_", "").strip("_")
+                entity_key = self.entity_attr
                 program_caps = (
                     appliance_data.capabilities.get("program", {})
                     .get("values", {})
@@ -129,7 +152,7 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
             appliance_data = self.get_appliance.data
             if hasattr(appliance_data, "capabilities") and appliance_data.capabilities:
                 # Use normalized entity key to match program capabilities
-                entity_key = self.entity_attr.lower().replace("fppn_", "").strip("_")
+                entity_key = self.entity_attr
                 program_caps = (
                     appliance_data.capabilities.get("program", {})
                     .get("values", {})
@@ -163,7 +186,7 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
             appliance_data = self.get_appliance.data
             if hasattr(appliance_data, "capabilities") and appliance_data.capabilities:
                 # Use normalized entity key to match program capabilities
-                entity_key = self.entity_attr.lower().replace("fppn_", "").strip("_")
+                entity_key = self.entity_attr
                 program_caps = (
                     appliance_data.capabilities.get("program", {})
                     .get("values", {})
@@ -187,13 +210,45 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Update the current value."""
+        # Prevent setting values for unsupported programs
+        if not self._is_supported_by_program():
+            # Special error message for food probe when not inserted
+            if self.entity_attr == "targetFoodProbeTemperatureC":
+                food_probe_state = self.reported_state.get("foodProbeInsertionState")
+                if food_probe_state == "NOT_INSERTED":
+                    _LOGGER.warning(
+                        "Cannot set %s for appliance %s: food probe is not inserted",
+                        self.entity_attr,
+                        self.pnc_id,
+                    )
+                    raise HomeAssistantError(
+                        "Food probe must be inserted to set target temperature"
+                    )
+
+            _LOGGER.warning(
+                "Cannot set %s for appliance %s: not supported by current program",
+                self.entity_attr,
+                self.pnc_id,
+            )
+            raise HomeAssistantError(
+                f"Control '{self.entity_attr}' is not supported by the current program"
+            )
+
         # Check if remote control is enabled
         remote_control = (
             self.appliance_status.get("properties", {})
             .get("reported", {})
             .get("remoteControl")
         )
-        if remote_control is not None and "ENABLED" not in str(remote_control):
+        _LOGGER.debug(
+            "Number control remote control check for %s: status=%s",
+            self.entity_attr,
+            remote_control,
+        )
+        # Check for disabled states
+        if remote_control is not None and (
+            "ENABLED" not in str(remote_control) or "DISABLED" in str(remote_control)
+        ):
             _LOGGER.warning(
                 "Cannot set %s for appliance %s: remote control is %s",
                 self.entity_attr,
@@ -216,6 +271,45 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
         formatted_value = format_command_for_appliance(
             self.capability, self.entity_attr, value
         )
+
+        # Apply program-specific constraints (min, max, step) that may differ from global capabilities
+        min_val = self.native_min_value
+        max_val = self.native_max_value
+        step_val = self.native_step
+
+        # Convert to seconds for time-based entities since formatted_value is in seconds
+        if self.unit == UnitOfTime.SECONDS:
+            if min_val is not None:
+                min_val = time_minutes_to_seconds(min_val)
+            if max_val is not None:
+                max_val = time_minutes_to_seconds(max_val)
+            if step_val is not None:
+                step_val = time_minutes_to_seconds(step_val)
+        elif self.unit == UnitOfTime.MINUTES:
+            if min_val is not None:
+                min_val = time_minutes_to_seconds(min_val)
+            if max_val is not None:
+                max_val = time_minutes_to_seconds(max_val)
+            if step_val is not None:
+                step_val = time_minutes_to_seconds(step_val)
+
+        # Clamp to current min/max bounds
+        if min_val is not None:
+            formatted_value = max(formatted_value, min_val)
+        if max_val is not None:
+            formatted_value = min(formatted_value, max_val)
+
+        # Round to nearest valid step
+        if step_val is not None and step_val > 0:
+            step_base = min_val if min_val is not None else 0
+            steps_from_base = (formatted_value - step_base) / step_val
+            formatted_value = step_base + round(steps_from_base) * step_val
+
+        # Update cached value with the constrained value for immediate UI feedback
+        if self.unit == UnitOfTime.SECONDS:
+            self._cached_value = time_seconds_to_minutes(formatted_value)
+        else:
+            self._cached_value = formatted_value
 
         # --- START OF OUR FIX ---
         command = {}
@@ -282,12 +376,140 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
 
     @property
     def available(self) -> bool:
-        """Return if the entity is available.
-
-        Keep entities available to provide consistent UI experience.
-        Let the API handle validation errors for unsupported operations.
-        """
+        """Return if the entity is available."""
+        # Food probe temperature is only available when probe is inserted
+        if self.entity_attr == "targetFoodProbeTemperatureC":
+            food_probe_state = self.reported_state.get("foodProbeInsertionState")
+            if food_probe_state == "NOT_INSERTED":
+                return False
+        # Always available for other entities - unsupported programs show "NA" instead
         return True
+
+    def _is_supported_by_program(self) -> bool:
+        """Check if the entity is supported by the current program."""
+        current_program = self.reported_state.get("program")
+        if not current_program:
+            return True  # If no program, assume supported
+
+        # Check if the appliance has program-specific capabilities
+        if not (hasattr(self.get_appliance, "data") and self.get_appliance.data):
+            return True
+
+        appliance_data = self.get_appliance.data
+        if not (
+            hasattr(appliance_data, "capabilities") and appliance_data.capabilities
+        ):
+            return True
+
+        program_caps = (
+            appliance_data.capabilities.get("program", {})
+            .get("values", {})
+            .get(current_program, {})
+        )
+
+        # If the entity is not in the program capabilities, it's not supported
+        if self.entity_attr not in program_caps:
+            return False
+
+        # Start with the base disabled state from program capabilities
+        entity_cap = program_caps[self.entity_attr]
+        disabled = False
+        if isinstance(entity_cap, dict):
+            disabled = entity_cap.get("disabled", False)
+
+        # Process triggers that affect this entity
+        all_capabilities = appliance_data.capabilities
+        for cap_name, cap_def in all_capabilities.items():
+            if isinstance(cap_def, dict) and "triggers" in cap_def:
+                for trigger in cap_def["triggers"]:
+                    if isinstance(trigger, dict) and "action" in trigger:
+                        action = trigger["action"]
+                        # Check if this trigger affects our entity
+                        if self.entity_attr in action:
+                            # Check if the condition is met
+                            if self._evaluate_trigger_condition(
+                                trigger.get("condition", {})
+                            ):
+                                # Apply the action
+                                entity_action = action[self.entity_attr]
+                                if (
+                                    isinstance(entity_action, dict)
+                                    and "disabled" in entity_action
+                                ):
+                                    disabled = entity_action["disabled"]
+                                    _LOGGER.debug(
+                                        "Trigger applied to %s: disabled=%s (trigger from %s)",
+                                        self.entity_attr,
+                                        disabled,
+                                        cap_name,
+                                    )
+
+        # If disabled by triggers or program settings, not supported
+        if disabled:
+            return False
+
+        # Special check for food probe temperature: only available if probe is inserted
+        if self.entity_attr == "targetFoodProbeTemperatureC":
+            food_probe_state = self.reported_state.get("foodProbeInsertionState")
+            if food_probe_state == "NOT_INSERTED":
+                return False
+
+        return True
+
+    def _evaluate_trigger_condition(self, condition: dict) -> bool:
+        """Evaluate a trigger condition."""
+        if not condition:
+            return True
+
+        operator = condition.get("operator", "eq")
+        operand1 = condition.get("operand_1")
+        operand2 = condition.get("operand_2")
+
+        # Handle nested operands
+        if isinstance(operand1, dict):
+            operand1 = self._evaluate_operand(operand1)
+        if isinstance(operand2, dict):
+            operand2 = self._evaluate_operand(operand2)
+
+        # Evaluate based on operator
+        if operator == "eq":
+            return operand1 == operand2
+        elif operator == "and":
+            return bool(operand1) and bool(operand2)
+        elif operator == "or":
+            return bool(operand1) or bool(operand2)
+
+        return False
+
+    def _evaluate_operand(self, operand: dict) -> Any:
+        """Evaluate a trigger operand."""
+        if "operand_1" in operand and "operand_2" in operand:
+            # This is a nested condition
+            return self._evaluate_trigger_condition(operand)
+        elif "operand_1" in operand:
+            # Reference to another capability
+            cap_name = operand["operand_1"]
+            if cap_name == "value":
+                # Special case: refers to the capability that has the trigger
+                # For now, return the current value of the capability that has the trigger
+                # This is complex to implement fully, so let's use a simpler approach
+                return self.reported_state.get(cap_name)
+            else:
+                # Get the value from reported state
+                return self.reported_state.get(cap_name)
+        else:
+            # Literal value
+            return operand.get("value")
+
+    @property
+    def state(self) -> str:
+        """Return the state of the entity."""
+        if not self._is_supported_by_program():
+            return "NA"
+        # Use the default state behavior for supported programs
+        if (native_val := self.native_value) is not None:
+            return str(native_val)
+        return "unavailable"
 
     @property
     def entity_registry_enabled_default(self) -> bool:

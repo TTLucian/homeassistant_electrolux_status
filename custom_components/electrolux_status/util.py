@@ -206,6 +206,7 @@ def string_to_boolean(value: str | None, fallback=True) -> bool | str | None:
         "unlocking",
         "unplugged",
         "up-to-date",
+        "up to date",
     }
 
     normalize_input = re.sub(r"\s+", " ", value.replace("_", " ").strip().lower())
@@ -403,6 +404,11 @@ def map_command_error_to_home_assistant_error(
                     # Try to extract detail from error response
                     if error_data and isinstance(error_data, dict):
                         detail = error_data.get("detail") or error_data.get("message")
+                        logger.debug(
+                            "406 error detail parsing: error_data=%s, detail=%s",
+                            error_data,
+                            detail,
+                        )
                         if detail:
                             detail_lower = str(detail).lower()
 
@@ -417,6 +423,9 @@ def map_command_error_to_home_assistant_error(
 
                             elif "type mismatch" in detail_lower:
                                 detail_message = "Integration Error: Formatting mismatch (Expected Boolean/String)."
+
+                            elif "remote control disabled" in detail_lower:
+                                detail_message = "Remote control is disabled for this appliance. Please enable it on the appliance's control panel."
 
                             elif (
                                 "temporary_locked" in detail_lower
@@ -593,9 +602,13 @@ def format_command_for_appliance(
         return bool(value)
 
     elif "temperature" in attr.lower() or cap_type in ("number", "float", "integer"):
-        # Temperature or numeric type - ensure float and apply step constraints for safety
+        # Temperature or numeric type - ensure float and apply step and range constraints
         try:
             numeric_value = float(value)
+
+            # Get min/max bounds
+            min_val = capability.get("min")
+            max_val = capability.get("max")
 
             # Apply step constraints as safety measure (sliders should prevent invalid values, but this handles edge cases)
             step = capability.get("step")
@@ -603,11 +616,17 @@ def format_command_for_appliance(
                 step = float(step)
                 if step > 0:
                     # For sliders, we still want to ensure step compliance
-                    # Calculate from a reasonable minimum (0 for most cases)
-                    min_val = capability.get("min", 0)
-                    steps_from_min = (numeric_value - min_val) / step
+                    # Calculate from a reasonable minimum (0 for most cases if min not specified)
+                    step_base = min_val if min_val is not None else 0
+                    steps_from_base = (numeric_value - step_base) / step
                     # Round to nearest valid step
-                    numeric_value = min_val + round(steps_from_min) * step
+                    numeric_value = step_base + round(steps_from_base) * step
+
+            # Clamp to min/max bounds
+            if min_val is not None:
+                numeric_value = max(numeric_value, float(min_val))
+            if max_val is not None:
+                numeric_value = min(numeric_value, float(max_val))
 
             return numeric_value
 

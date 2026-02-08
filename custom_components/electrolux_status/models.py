@@ -101,13 +101,16 @@ class Appliance:
     def appliance_type(self) -> Any:
         """Return the reported type of the appliance.
 
+        OV: Oven
         CR: Refrigerator
         WM: Washing Machine
         """
         from typing import cast
 
         return (
-            cast(dict[str, Any], self.state).get("applianceData", {}).get("modelName")
+            cast(dict[str, Any], self.state)
+            .get("applianceData", {})
+            .get("applianceType")
         )
 
     def update(self, appliance_status: ApplianceState | dict[str, Any]) -> None:
@@ -142,20 +145,25 @@ class Appliance:
     @property
     def catalog(self) -> dict[str, Any]:
         """Return the defined catalog for the appliance."""
-        # TODO: Use appliance_type as opposed to model?
+        from .catalog_core import CATALOG_BY_TYPE
+
+        # Start with the base catalog
+        new_catalog = copy.deepcopy(CATALOG_BASE)
+
+        # Merge with appliance-type specific catalog if available
+        appliance_type = self.appliance_type
+        if appliance_type in CATALOG_BY_TYPE:
+            type_catalog = CATALOG_BY_TYPE[appliance_type]
+            for key, device in type_catalog.items():
+                new_catalog[key] = device
+
+        # Apply model-specific overrides if available
         if self.model in CATALOG_MODEL:
-            # Make a deep copy of the base catalog to preserve it
-            new_catalog = copy.deepcopy(CATALOG_BASE)
-
-            # Get the specific model's extended catalog
             model_catalog = CATALOG_MODEL[self.model]
-
-            # Update the existing catalog with the extended information for this model
             for key, device in model_catalog.items():
                 new_catalog[key] = device
 
-            return new_catalog
-        return CATALOG_BASE
+        return new_catalog
 
     def get_state(self, attr_name: str) -> dict[str, Any] | None:
         """Retrieve the start from self.reported_state using the attribute name.
@@ -241,11 +249,9 @@ class Appliance:
         if catalog_item:
             if capability_info is None:
                 capability_info = catalog_item.capability_info
-            elif (
-                "values" not in capability_info
-                and "values" in catalog_item.capability_info
-            ):
-                capability_info["values"] = catalog_item.capability_info["values"]
+            else:
+                # Merge catalog capability_info into API capability_info
+                capability_info.update(catalog_item.capability_info)
 
             device_class = catalog_item.device_class
             unit = catalog_item.unit
@@ -427,8 +433,21 @@ class Appliance:
                     )
 
         # Setup each found entity
-        self.entities = list(entities)
+        # Deduplicate entities by unique_id to prevent duplicates
+        unique_entities = {}
         for ent in entities:
+            unique_id = ent.unique_id
+            if unique_id not in unique_entities:
+                unique_entities[unique_id] = ent
+            else:
+                _LOGGER.debug(
+                    "Skipping duplicate entity with unique_id %s for appliance %s",
+                    unique_id,
+                    self.pnc_id,
+                )
+
+        self.entities = list(unique_entities.values())
+        for ent in self.entities:
             ent.setup(data)
 
 

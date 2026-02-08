@@ -1,5 +1,6 @@
 """Button platform for Electrolux Status."""
 
+import hashlib
 import logging
 from typing import Any
 
@@ -10,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import BUTTON, DOMAIN, icon_mapping
+from .const import BUTTON, CONF_API_KEY, DOMAIN, icon_mapping
 from .entity import ElectroluxEntity
 from .model import ElectroluxDevice
 from .util import (
@@ -90,7 +91,20 @@ class ElectroluxButton(ElectroluxEntity, ButtonEntity):
     @property
     def unique_id(self) -> str:
         """Return a unique ID to use for this entity."""
-        return f"{self.config_entry.entry_id}-{self.val_to_send}-{self.entity_attr}-{self.entity_source}-{self.pnc_id}"
+        # Use stable unique_id based on API key hash, including val_to_send for button differentiation
+        api_key = self.config_entry.data.get(CONF_API_KEY, "")
+        api_key_hash = (
+            hashlib.sha256(api_key.encode()).hexdigest()[:16] if api_key else "unknown"
+        )
+        # Normalize entity_attr by removing fPPN prefix for consistent unique_ids
+        normalized_attr = self.entity_attr.lower()
+        if normalized_attr.startswith("fppn_"):
+            normalized_attr = normalized_attr.replace("fppn_", "").strip("_")
+        elif normalized_attr.startswith("fppn"):
+            normalized_attr = normalized_attr.replace("fppn", "").strip("_")
+        else:
+            normalized_attr = normalized_attr.strip("_")
+        return f"{api_key_hash}-{normalized_attr}-{self.val_to_send}-{self.entity_source or 'root'}-{self.pnc_id}"
 
     @property
     def name(self) -> str:

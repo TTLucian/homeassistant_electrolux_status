@@ -190,30 +190,7 @@ class ElectroluxEntity(CoordinatorEntity):
     @property
     def unique_id(self) -> str:
         """Return a unique ID to use for this entity."""
-        # First, try to find existing entity with old unique_id format (config_entry.entry_id based)
-        # to maintain backward compatibility and prevent entity duplication
-        registry = er.async_get(self.coordinator.hass)
-        entity_attr_normalized = self.entity_attr.lower()
-        if entity_attr_normalized.startswith("fppn_"):
-            entity_attr_normalized = entity_attr_normalized.replace("fppn_", "").strip(
-                "_"
-            )
-        elif entity_attr_normalized.startswith("fppn"):
-            entity_attr_normalized = entity_attr_normalized.replace("fppn", "").strip(
-                "_"
-            )
-        old_unique_id = f"{self.config_entry.entry_id}-{entity_attr_normalized}-{self.entity_source or 'root'}-{self.pnc_id}"
-
-        # Check if an entity with the old unique_id exists in the registry
-        for entity_entry in registry.entities.values():
-            if (
-                entity_entry.config_entry_id == self.config_entry.entry_id
-                and entity_entry.unique_id == old_unique_id
-            ):
-                # Use the old unique_id to maintain compatibility
-                return old_unique_id
-
-        # Use new stable unique_id based on API key hash for new installations
+        # Use stable unique_id based on API key hash for consistent entity IDs
         api_key = self.config_entry.data.get(CONF_API_KEY, "")
         api_key_hash = (
             hashlib.sha256(api_key.encode()).hexdigest()[:16] if api_key else "unknown"
@@ -440,12 +417,27 @@ class ElectroluxEntity(CoordinatorEntity):
             reported = self.appliance_status.get("properties", {}).get("reported", {})
             remote_control_status = reported.get("remoteControl")
 
+        _LOGGER.debug(
+            "Remote control status for appliance %s: %s",
+            self.pnc_id,
+            remote_control_status,
+        )
+
         # Allow None as a valid enabled state (some appliances don't report remoteControl)
         if remote_control_status is None:
             return True
 
         if remote_control_status:
-            return "ENABLED" in str(remote_control_status)
+            result = "ENABLED" in str(remote_control_status) and "DISABLED" not in str(
+                remote_control_status
+            )
+            _LOGGER.debug(
+                "Remote control enabled check for %s: %s -> %s",
+                self.pnc_id,
+                remote_control_status,
+                result,
+            )
+            return result
 
         # If no remote control status found, assume it's enabled
         return True

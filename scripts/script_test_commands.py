@@ -10,8 +10,8 @@ import json
 import os
 import sys
 
-# Add the custom_components directory to the path
-sys.path.insert(0, os.path.dirname(__file__))
+# Add the repository root directory to the path (parent of scripts directory)
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from custom_components.electrolux_status.util import ElectroluxApiClient
 
