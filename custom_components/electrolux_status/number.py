@@ -17,8 +17,6 @@ from .util import (
     ElectroluxApiClient,
     format_command_for_appliance,
     map_command_error_to_home_assistant_error,
-    time_minutes_to_seconds,
-    time_seconds_to_minutes,
 )
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -139,15 +137,10 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
         if isinstance(self.unit, UnitOfTemperature):
             value = round(value, 2)
 
-        # Convert to native units (minutes for time)
-        if self.unit == UnitOfTime.MINUTES:
-            converted = time_seconds_to_minutes(value)
-            if converted is None:
-                _LOGGER.error(
-                    "Unexpected None from time_seconds_to_minutes for %s", value
-                )
-                return self._cached_value
-            value = float(converted)
+        # Convert to native units (minutes for time entities)
+        if self.unit == UnitOfTime.SECONDS:
+            # Value is already converted to minutes by reported_state in entity.py
+            pass  # No additional conversion needed
 
         # Clamp value to current program-specific min/max range
         min_val = self.native_min_value
@@ -162,52 +155,68 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
 
     @property
     def native_max_value(self) -> float:
-        """Return max value: Catalog (Minutes) -> Program -> Appliance API."""
-        # 1. Catalog is the Source of Truth (already in correct units)
+        """Return max value: Catalog (Seconds) -> Program -> Appliance API, converted to minutes for UI."""
+        # 1. Catalog is the Source of Truth (already in correct units - seconds)
         if (
             self._catalog_entry
             and (cat_max := self._catalog_entry.capability_info.get("max")) is not None
         ):
+            # Convert seconds to minutes for UI display
+            if self.unit == UnitOfTime.SECONDS:
+                return float(cat_max // 60)
             return float(cat_max)
 
         # 2. Fallback to API/Program logic
         max_val = self._get_program_constraint("max") or self.capability.get("max")
 
-        # 3. Convert only if coming from API (seconds)
-        if self.unit == UnitOfTime.MINUTES and max_val is not None:
-            return float(time_seconds_to_minutes(max_val))  # type: ignore[arg-type]
+        # 3. Convert only if coming from API (seconds) and entity is time-based
+        if self.unit == UnitOfTime.SECONDS and max_val is not None:
+            return float(max_val // 60)  # Convert seconds to minutes for UI
         return float(max_val or 100.0)
 
     @property
     def native_min_value(self) -> float:
-        """Return min value: Catalog (Minutes) -> Program -> Appliance API."""
+        """Return min value: Catalog (Seconds) -> Program -> Appliance API, converted to minutes for UI."""
         if (
             self._catalog_entry
             and (cat_min := self._catalog_entry.capability_info.get("min")) is not None
         ):
+            # Convert seconds to minutes for UI display
+            if self.unit == UnitOfTime.SECONDS:
+                return float(cat_min // 60)
             return float(cat_min)
 
         min_val = self._get_program_constraint("min") or self.capability.get("min")
 
-        if self.unit == UnitOfTime.MINUTES and min_val is not None:
-            return float(time_seconds_to_minutes(min_val))  # type: ignore[arg-type]
+        if self.unit == UnitOfTime.SECONDS and min_val is not None:
+            return float(min_val // 60)  # Convert seconds to minutes for UI
         return float(min_val or 0.0)
 
     @property
     def native_step(self) -> float:
-        """Return step value: Catalog (Minutes) -> Program -> Safe Default."""
+        """Return step value: Catalog (Seconds) -> Program -> Safe Default, converted to minutes for UI."""
         if (
             self._catalog_entry
             and (cat_step := self._catalog_entry.capability_info.get("step"))
             is not None
         ):
+            # Convert seconds to minutes for UI display
+            if self.unit == UnitOfTime.SECONDS:
+                return float(cat_step // 60)
             return float(cat_step)
 
         step_val = self._get_program_constraint("step") or self.capability.get("step")
 
-        if self.unit == UnitOfTime.MINUTES and step_val is not None:
-            return float(time_seconds_to_minutes(step_val))  # type: ignore[arg-type]
+        if self.unit == UnitOfTime.SECONDS and step_val is not None:
+            return float(step_val // 60)  # Convert seconds to minutes for UI
         return float(step_val or 1.0)
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the unit of measurement, converting seconds to minutes for time entities."""
+        if self.unit == UnitOfTime.SECONDS:
+            return "min"  # Show 'min' instead of 's' for time entities
+        return self.unit
 
     async def async_set_native_value(self, value: float) -> None:
         """Update the current value."""
@@ -314,10 +323,11 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
                 f"Remote control disabled (status: {remote_control})"
             )
 
-        # Convert minutes back to seconds for time entities
-        if self.unit == UnitOfTime.MINUTES:
-            converted = time_minutes_to_seconds(value)
-            value = float(converted) if converted is not None else value
+        # Convert UI minutes back to seconds for time entities
+        if self.unit == UnitOfTime.SECONDS:
+            # If user sets '1' (minute), send '60' (seconds) to the API
+            value = int(value) * 60
+
         if self.capability.get("step", 1) == 1:
             value = int(value)
 
@@ -329,8 +339,9 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
         )
 
         # Update cached value with the constrained value for immediate UI feedback
-        if self.native_unit_of_measurement == UnitOfTime.MINUTES:
-            self._cached_value = time_seconds_to_minutes(formatted_value)
+        if self.unit == UnitOfTime.SECONDS:
+            # API receives seconds, but UI shows minutes
+            self._cached_value = formatted_value // 60
         else:
             self._cached_value = formatted_value
 
@@ -416,11 +427,6 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
             ) from ex
         _LOGGER.debug("Electrolux set value result %s", result)
         # State will be updated via websocket streaming
-
-    @property
-    def native_unit_of_measurement(self) -> str | None:
-        """Return the unit of measurement."""
-        return self.unit
 
     @property
     def available(self) -> bool:

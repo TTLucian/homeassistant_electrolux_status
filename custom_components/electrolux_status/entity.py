@@ -6,7 +6,7 @@ import logging
 from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, Platform
+from homeassistant.const import EntityCategory, Platform, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -271,10 +271,22 @@ class ElectroluxEntity(CoordinatorEntity):
 
     @property
     def reported_state(self) -> dict[str, Any]:
-        """Return reported state of the appliance."""
+        """Return reported state of the appliance, converting seconds to minutes for time entities."""
         if self.appliance_status is None:
             return {}
-        return self.appliance_status.get("properties", {}).get("reported", {})
+
+        base_state = self.appliance_status.get("properties", {}).get("reported", {})
+
+        # Convert seconds to minutes for UI display when unit is SECONDS
+        if self.unit == UnitOfTime.SECONDS:
+            transformed_state = base_state.copy()
+            raw_seconds = base_state.get(self.entity_attr)
+            if raw_seconds is not None and isinstance(raw_seconds, (int, float)):
+                # Scale down for the 0-1439 UI range
+                transformed_state[self.entity_attr] = raw_seconds // 60
+            return transformed_state
+
+        return base_state
 
     @reported_state.setter
     def reported_state(self, value: dict[str, Any] | None) -> None:

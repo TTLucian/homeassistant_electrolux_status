@@ -243,14 +243,14 @@ CATALOG_OVEN: dict[str, ElectroluxDevice] = {
         capability_info={
             "access": "readwrite",
             "default": "INVALID_OR_NOT_SET_TIME",
-            "max": 1439,
+            "max": 86340,  # 1439 minutes * 60 seconds
             "min": 0,
-            "step": 1,
+            "step": 60,  # 1 minute in seconds
             "type": "number",
             "values": {"INVALID_OR_NOT_SET_TIME": {"disabled": True}},
         },
         device_class=None,
-        unit=UnitOfTime.MINUTES,
+        unit=UnitOfTime.SECONDS,  # Changed from MINUTES
         entity_category=None,
         entity_icon="mdi:clock-start",
     ),
@@ -258,13 +258,13 @@ CATALOG_OVEN: dict[str, ElectroluxDevice] = {
         capability_info={
             "access": "readwrite",
             "default": 0,
-            "max": 1439,
+            "max": 86340,  # 1439 minutes * 60 seconds
             "min": 0,
-            "step": 1,
+            "step": 60,  # 1 minute in seconds
             "type": "number",
         },
         device_class=None,
-        unit=UnitOfTime.MINUTES,
+        unit=UnitOfTime.SECONDS,  # Changed from MINUTES
         entity_category=None,
         entity_icon="mdi:timelapse",
     ),

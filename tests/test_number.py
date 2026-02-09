@@ -243,7 +243,7 @@ class TestElectroluxNumber:
             entity_attr="testTime",
             entity_source=None,
             capability=capability,
-            unit=UnitOfTime.MINUTES,
+            unit=UnitOfTime.SECONDS,  # Updated to SECONDS
             device_class=None,
             entity_category=EntityCategory.CONFIG,
             icon="mdi:clock",
