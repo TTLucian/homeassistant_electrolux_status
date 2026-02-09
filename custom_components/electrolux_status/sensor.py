@@ -1,6 +1,5 @@
 """Switch platform for Electrolux Status."""
 
-import contextlib
 import logging
 from typing import Any
 
@@ -12,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, SENSOR
 from .entity import ElectroluxEntity
-from .util import create_notification, get_capability
+from .util import create_notification, get_capability, time_seconds_to_minutes
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -102,7 +101,7 @@ class ElectroluxSensor(ElectroluxEntity, SensorEntity):
                 live_value = self.capability.get("foodProbeSupported")
                 if live_value is not None:
                     value = live_value
-            elif self.entity_key == "displayfoodprobetemperaturec":
+            elif self.entity_key == "display_food_probe_temperature_c":
                 # Point to targetFoodProbeTemperatureC from reported properties
                 live_value = self.reported_state.get("targetFoodProbeTemperatureC")
                 if live_value is not None:
@@ -111,9 +110,17 @@ class ElectroluxSensor(ElectroluxEntity, SensorEntity):
             value = get_capability(self.capability, "default")
         elif self.entity_attr == "alerts":
             value = len(value) if value is not None else 0
-        elif value is not None and isinstance(self.unit, UnitOfTime):
+        elif value is not None and self.unit == UnitOfTime.MINUTES:
             # Electrolux bug - prevent negative/disabled timers
             value = max(value, 0)
+            # Convert to native units (minutes for time)
+            converted = time_seconds_to_minutes(value)
+            if converted is None:
+                _LOGGER.error(
+                    "Unexpected None from time_seconds_to_minutes for %s", value
+                )
+                return self._cached_value
+            value = float(converted)
 
         if self.catalog_entry and self.catalog_entry.value_mapping:
             # Electrolux presents as string but returns an int
@@ -135,22 +142,12 @@ class ElectroluxSensor(ElectroluxEntity, SensorEntity):
     @property
     def native_unit_of_measurement(self) -> str | None:
         """Return unit of measurement."""
-        # Special handling for food probe temperature sensor
-        if self.entity_attr == "targetFoodProbeTemperatureC":
-            return UnitOfTemperature.CELSIUS
-        # store the value of the sensor in the native format
         return self.unit
 
     @property
     def suggested_unit_of_measurement(self) -> str | None:
         """Return suggested unit of measurement."""
-        # change the display unit in the HA frontend
-        if self.unit == UnitOfTime.SECONDS:
-            return UnitOfTime.MINUTES
-        with contextlib.suppress(ValueError):
-            if self.unit and self._is_valid_suggested_unit(self.unit):
-                return self.unit
-        return None
+        return self.unit
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

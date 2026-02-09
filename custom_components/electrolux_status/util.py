@@ -3,12 +3,15 @@
 import asyncio
 import base64
 import logging
-import math
 import re
 from typing import Any
 
-from electrolux_group_developer_sdk.auth.token_manager import TokenManager
-from electrolux_group_developer_sdk.client.appliance_client import ApplianceClient
+from electrolux_group_developer_sdk.auth.token_manager import (
+    TokenManager,  # type: ignore[import-untyped]
+)
+from electrolux_group_developer_sdk.client.appliance_client import (
+    ApplianceClient,  # type: ignore[import-untyped]
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -133,7 +136,7 @@ def time_seconds_to_minutes(seconds: float | None) -> int | None:
         return None
     if seconds == -1:
         return -1
-    return int(math.ceil(int(seconds) / 60))
+    return round(seconds / 60)
 
 
 def time_minutes_to_seconds(minutes: float | None) -> int | None:

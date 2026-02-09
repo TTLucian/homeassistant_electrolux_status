@@ -125,15 +125,8 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
         ):
             return None
 
-        # Special handling for targetDuration - convert from seconds to minutes for display
-        if self.entity_attr == "targetDuration":
-            value = value / 60 if value else 0
-
-        # Special handling for startTime - always display in minutes regardless of unit
-        if self.entity_attr == "startTime":
-            if value == -1:
-                return None
-            value = value / 60 if value else 0
+        if self.entity_attr == "startTime" and value == -1:
+            return None
 
         if not value:
             value = self.capability.get("default", None)
@@ -145,9 +138,16 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
             return self._cached_value
         if isinstance(self.unit, UnitOfTemperature):
             value = round(value, 2)
-        elif isinstance(self.unit, UnitOfTime):
-            # Electrolux bug - prevent negative/disabled timers
-            value = max(value, 0)
+
+        # Convert to native units (minutes for time)
+        if self.unit == UnitOfTime.MINUTES:
+            converted = time_seconds_to_minutes(value)
+            if converted is None:
+                _LOGGER.error(
+                    "Unexpected None from time_seconds_to_minutes for %s", value
+                )
+                return self._cached_value
+            value = float(converted)
 
         # Clamp value to current program-specific min/max range
         min_val = self.native_min_value
@@ -172,13 +172,13 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
                 max_val = 230.0
             elif self.entity_attr == "targetFoodProbeTemperatureC":
                 max_val = 99.0
-            elif isinstance(self.unit, UnitOfTime):
-                max_val = 86340.0
+            elif self.unit == UnitOfTime.MINUTES:
+                max_val = 1439.0
             else:
                 max_val = 100.0
 
         # 3. Centralized Unit Conversion
-        if isinstance(self.unit, UnitOfTime):
+        if self.unit == UnitOfTime.MINUTES:
             return float(time_seconds_to_minutes(max_val))  # type: ignore[arg-type]
         return float(max_val)
 
@@ -193,7 +193,7 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
             else:
                 min_val = 0.0
 
-        if isinstance(self.unit, UnitOfTime):
+        if self.unit == UnitOfTime.MINUTES:
             return float(time_seconds_to_minutes(min_val))  # type: ignore[arg-type]
         return float(min_val)
 
@@ -203,9 +203,9 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
         step_val = self._get_program_constraint("step") or self.capability.get("step")
 
         if not step_val:  # Handle None or 0.0
-            step_val = 60.0 if isinstance(self.unit, UnitOfTime) else 1.0
+            step_val = 1.0 if self.unit == UnitOfTime.MINUTES else 1.0
 
-        if isinstance(self.unit, UnitOfTime):
+        if self.unit == UnitOfTime.MINUTES:
             return float(time_seconds_to_minutes(step_val))  # type: ignore[arg-type]
         return float(step_val)
 
@@ -314,8 +314,8 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
                 f"Remote control disabled (status: {remote_control})"
             )
 
-        # Convert minutes back to seconds for all time entities
-        if isinstance(self.unit, UnitOfTime):
+        # Convert minutes back to seconds for time entities
+        if self.unit == UnitOfTime.MINUTES:
             converted = time_minutes_to_seconds(value)
             value = float(converted) if converted is not None else value
         if self.capability.get("step", 1) == 1:
@@ -327,32 +327,6 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
         formatted_value = format_command_for_appliance(
             self.capability, self.entity_attr, value
         )
-
-        # Apply program-specific constraints (min, max, step) that may differ from global capabilities
-        min_val = self.native_min_value
-        max_val = self.native_max_value
-        step_val = self.native_step
-
-        # Convert constraints back to seconds for time-based entities since formatted_value is in seconds
-        if self.native_unit_of_measurement == UnitOfTime.MINUTES:
-            if min_val is not None:
-                min_val = float(time_minutes_to_seconds(min_val))  # type: ignore[arg-type]
-            if max_val is not None:
-                max_val = float(time_minutes_to_seconds(max_val))  # type: ignore[arg-type]
-            if step_val is not None:
-                step_val = float(time_minutes_to_seconds(step_val))  # type: ignore[arg-type]
-
-        # Clamp to current min/max bounds
-        if min_val is not None:
-            formatted_value = max(formatted_value, min_val)
-        if max_val is not None:
-            formatted_value = min(formatted_value, max_val)
-
-        # Round to nearest valid step
-        if step_val is not None and step_val > 0:
-            step_base = min_val if min_val is not None else 0
-            steps_from_base = (formatted_value - step_base) / step_val
-            formatted_value = step_base + round(steps_from_base) * step_val
 
         # Update cached value with the constrained value for immediate UI feedback
         if self.native_unit_of_measurement == UnitOfTime.MINUTES:
@@ -446,8 +420,6 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
     @property
     def native_unit_of_measurement(self) -> str | None:
         """Return the unit of measurement."""
-        if self.unit == UnitOfTime.SECONDS:
-            return UnitOfTime.MINUTES
         return self.unit
 
     @property
