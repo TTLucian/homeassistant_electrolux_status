@@ -1,4 +1,4 @@
 # Development requirements to satisfy editor/Pylance
 # Installing these in a venv will allow Pylance to resolve imports used by the integration.
-pydantic>=2.0.0
+pydantic>=2.11.5,<3.0.0
 electrolux-group-developer-sdk
