@@ -76,7 +76,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("async_setup_entry async_config_entry_first_refresh")
     try:
         await asyncio.wait_for(
-            coordinator.async_config_entry_first_refresh(), timeout=FIRST_REFRESH_TIMEOUT
+            coordinator.async_config_entry_first_refresh(),
+            timeout=FIRST_REFRESH_TIMEOUT,
         )
     except (asyncio.TimeoutError, Exception) as err:
         # Handle both timeouts and other exceptions gracefully
@@ -141,18 +142,20 @@ async def update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> Non
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Handle removal of an entry."""
+    # 1. Retrieve the client before data is cleared
     coordinator: ElectroluxCoordinator = hass.data[DOMAIN].get(entry.entry_id)
+    client = coordinator.api if coordinator else None
 
-    if coordinator:
-        # Proper cleanup of coordinator resources
-        await coordinator.close_websocket()
-        await coordinator.api.close()
+    # 2. Trigger the decisive cleanup in util.py
+    if client:
+        await client.close()
 
-        # Remove from registry to prevent memory leaks
+    # 3. Proceed with standard HA unloading
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
 
-    # Unload platforms
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    return unload_ok
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:

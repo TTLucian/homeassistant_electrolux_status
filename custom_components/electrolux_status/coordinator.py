@@ -78,7 +78,6 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
         self.platforms: list[str] = []
         self.renew_task: Optional[asyncio.Task] = None
         self.renew_interval = renew_interval
-        self._sse_task = None  # Track SSE task
         self._deferred_tasks: set = set()  # Track deferred update tasks
         self._deferred_tasks_by_appliance: dict[str, asyncio.Task] = (
             {}
@@ -320,24 +319,25 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
     async def listen_websocket(self) -> None:
         """Listen for state changes."""
         appliances: Any = self.data.get("appliances", None)
+        if not appliances:
+            _LOGGER.warning("No appliance data available, skipping SSE setup")
+            return
+
         ids = appliances.get_appliance_ids()
         _LOGGER.debug("Electrolux listen_websocket for appliances %s", ",".join(ids))
         if ids is None or len(ids) == 0:
+            _LOGGER.debug("No appliances to listen for, skipping SSE setup")
             return
 
-        # Cancel and await existing SSE task to prevent resource leaks
-        if self._sse_task and not self._sse_task.done():
-            self._sse_task.cancel()
-            try:
-                await self._sse_task
-            except asyncio.CancelledError:
-                _LOGGER.debug("Previous SSE task cancelled successfully")
-            self._sse_task = None
-
-        # Start new SSE streaming
-        self._sse_task = self.hass.async_create_task(
-            self.api.watch_for_appliance_state_updates(ids, self.incoming_data)
-        )
+        # watch_for_appliance_state_updates in util.py handles kill-before-restart safely
+        try:
+            await self.api.watch_for_appliance_state_updates(ids, self.incoming_data)
+            _LOGGER.debug(
+                "Successfully started SSE listening for %d appliances", len(ids)
+            )
+        except Exception as ex:
+            _LOGGER.error("Failed to start SSE listening: %s", ex)
+            raise
 
     async def renew_websocket(self):
         """Renew SSE event stream."""
@@ -350,17 +350,8 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("Electrolux renew SSE event stream")
 
                 # Cancel existing SSE task before disconnecting
-                if self._sse_task and not self._sse_task.done():
-                    self._sse_task.cancel()
-                    try:
-                        await asyncio.wait_for(
-                            self._sse_task, timeout=TASK_CANCEL_TIMEOUT
-                        )
-                    except (asyncio.CancelledError, asyncio.TimeoutError):
-                        _LOGGER.debug(
-                            "Electrolux SSE task was cancelled during renewal, as expected"
-                        )
-                    self._sse_task = None
+                # Note: util.py watch_for_appliance_state_updates handles kill-before-restart,
+                # but we still need to disconnect here for renewal
 
                 # Disconnect and reconnect with timeout
                 try:
@@ -404,14 +395,6 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 _LOGGER.debug("Electrolux renewal task cancelled/timeout during close")
 
-        # Cancel SSE task with shorter timeout
-        if self._sse_task and not self._sse_task.done():
-            self._sse_task.cancel()
-            try:
-                await asyncio.wait_for(self._sse_task, timeout=TASK_CANCEL_TIMEOUT)
-            except (asyncio.CancelledError, asyncio.TimeoutError):
-                _LOGGER.debug("Electrolux SSE task cancelled/timeout during close")
-
         # Cancel all deferred tasks aggressively
         tasks_to_cancel = list(self._deferred_tasks.copy())
         for task in tasks_to_cancel:
@@ -436,14 +419,12 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
 
         self._deferred_tasks_by_appliance.clear()
 
-        # Close API connection with shorter timeout
+        # Close API connection - util.py handles SSE stream cleanup
         try:
-            await asyncio.wait_for(
-                self.api.disconnect_websocket(), timeout=API_DISCONNECT_TIMEOUT
-            )
+            await asyncio.wait_for(self.api.close(), timeout=API_DISCONNECT_TIMEOUT)
         except (asyncio.TimeoutError, Exception) as ex:
             if isinstance(ex, asyncio.TimeoutError):
-                _LOGGER.debug("Electrolux API disconnect timeout")
+                _LOGGER.debug("Electrolux API close timeout")
             else:
                 _LOGGER.error("Electrolux close SSE failed %s", ex)
 

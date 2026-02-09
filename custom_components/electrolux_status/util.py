@@ -721,15 +721,18 @@ class ElectroluxApiClient:
         self.hass: HomeAssistant | None = hass
         self._token_manager = TokenManager(access_token, refresh_token, api_key)
         self._client = ApplianceClient(self._token_manager)
+        self._token_handler = None  # Track handler
+        self._token_logger = None  # Track logger
+
         # Attach token refresh handler to surface token refresh failures as HA issues
         if hass:
             try:
-                handler = _TokenRefreshHandler(self, hass)
-                handler.setLevel(logging.ERROR)
-                token_logger = logging.getLogger(
+                self._token_handler = _TokenRefreshHandler(self, hass)
+                self._token_handler.setLevel(logging.ERROR)
+                self._token_logger = logging.getLogger(
                     "electrolux_group_developer_sdk.auth.token_manager"
                 )
-                token_logger.addHandler(handler)
+                self._token_logger.addHandler(self._token_handler)
             except Exception:
                 _LOGGER.exception("Failed to attach token refresh logger handler")
 
@@ -857,7 +860,11 @@ class ElectroluxApiClient:
         return details.capabilities
 
     async def watch_for_appliance_state_updates(self, appliance_ids, callback):
-        """Watch for state updates using Server-Sent Events (SSE)."""
+        """Safely start SSE event stream."""
+        # Ensure any existing stream is killed first
+        if hasattr(self, "_sse_task") and self._sse_task:
+            await self.disconnect_websocket()
+
         try:
             # Add listeners for each appliance
             for appliance_id in appliance_ids:
@@ -927,6 +934,11 @@ class ElectroluxApiClient:
             raise
 
     async def close(self):
-        """Close the client."""
-        # The new SDK doesn't have a close method, but TokenManager might need cleanup
-        pass
+        """Decisive cleanup of resources."""
+        # 1. Stop the SSE stream
+        await self.disconnect_websocket()
+
+        # 2. Remove the logging handler to prevent leaks
+        if self._token_handler and self._token_logger:
+            self._token_logger.removeHandler(self._token_handler)
+            self._token_handler = None
