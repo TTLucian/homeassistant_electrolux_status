@@ -12,11 +12,13 @@ from electrolux_group_developer_sdk.client.appliance_client import ApplianceClie
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as issue_registry
 
 from .const import (
     CONF_NOTIFICATION_DEFAULT,
     CONF_NOTIFICATION_DIAG,
     CONF_NOTIFICATION_WARNING,
+    DOMAIN,
     NAME,
 )
 
@@ -670,14 +672,86 @@ def format_command_for_appliance(
         return value
 
 
+class _TokenRefreshHandler(logging.Handler):
+    """Logging handler to detect token refresh failures and report to HA issue registry."""
+
+    def __init__(self, client: "ElectroluxApiClient", hass: HomeAssistant) -> None:
+        super().__init__()
+        self._client = client
+        self._hass = hass
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            lmsg = msg.lower()
+            # Match common messages indicating token refresh failure
+            if (
+                "refresh token is invalid" in lmsg
+                or "invalid grant" in lmsg
+                or ("401" in lmsg and "refresh" in lmsg)
+            ):
+                try:
+                    # Schedule the async issue creation on the HA event loop
+                    self._hass.loop.call_soon_threadsafe(
+                        lambda: asyncio.create_task(
+                            self._client._report_token_refresh_error(msg)
+                        )
+                    )
+                except Exception:
+                    _LOGGER.exception("Failed to schedule token refresh issue creation")
+        except Exception:
+            _LOGGER.exception("TokenRefreshHandler emit failed")
+
+
 class ElectroluxApiClient:
     """Wrapper for the new Electrolux API client to maintain compatibility."""
 
-    def __init__(self, api_key: str, access_token: str, refresh_token: str, hass=None):
+    def __init__(
+        self,
+        api_key: str,
+        access_token: str,
+        refresh_token: str,
+        hass: HomeAssistant | None = None,
+    ):
         """Initialize the API client."""
-        self.hass = hass
+        # Explicitly annotate hass as optional HomeAssistant
+        self.hass: HomeAssistant | None = hass
         self._token_manager = TokenManager(access_token, refresh_token, api_key)
         self._client = ApplianceClient(self._token_manager)
+        # Attach token refresh handler to surface token refresh failures as HA issues
+        if hass:
+            try:
+                handler = _TokenRefreshHandler(self, hass)
+                handler.setLevel(logging.ERROR)
+                token_logger = logging.getLogger(
+                    "electrolux_group_developer_sdk.auth.token_manager"
+                )
+                token_logger.addHandler(handler)
+            except Exception:
+                _LOGGER.exception("Failed to attach token refresh logger handler")
+
+    async def _report_token_refresh_error(self, message: str) -> None:
+        """Create an HA issue when token refresh fails so user can re-authenticate."""
+        # Avoid passing None to Home Assistant APIs
+        if not self.hass:
+            _LOGGER.warning(
+                "Token refresh failed but no Home Assistant instance available; skipping issue creation: %s",
+                message,
+            )
+            return
+        try:
+            _LOGGER.warning("Token refresh failed: %s. Creating HA issue.", message)
+            issue_registry.async_create_issue(
+                self.hass,
+                DOMAIN,
+                "invalid_refresh_token",
+                is_fixable=True,
+                severity=issue_registry.IssueSeverity.CRITICAL,
+                translation_key="invalid_refresh_token",
+                translation_placeholders={"message": message},
+            )
+        except Exception:
+            _LOGGER.exception("Failed to create token refresh issue in Home Assistant")
 
     async def get_appliances_list(self):
         """Get list of appliances."""

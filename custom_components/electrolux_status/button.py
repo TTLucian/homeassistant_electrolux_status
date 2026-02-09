@@ -89,6 +89,13 @@ class ElectroluxButton(ElectroluxEntity, ButtonEntity):
         return BUTTON
 
     @property
+    def device_class(self) -> str | None:
+        """Return the device class for the button entity."""
+        if self._catalog_entry and hasattr(self._catalog_entry, "device_class"):
+            return self._catalog_entry.device_class
+        return self._device_class
+
+    @property
     def unique_id(self) -> str:
         """Return a unique ID to use for this entity."""
         # Use stable unique_id based on API key hash, including val_to_send for button differentiation
@@ -111,9 +118,14 @@ class ElectroluxButton(ElectroluxEntity, ButtonEntity):
         """Return the name of the sensor."""
         name = self._name
         if self.catalog_entry and self.catalog_entry.friendly_name:
-            name = (
-                f"{self.get_appliance.name} {self.catalog_entry.friendly_name.lower()}"
-            )
+            # Get appliance name from coordinator data
+            appliances = self.coordinator.data.get("appliances", None)
+            if appliances:
+                appliance = appliances.get_appliance(self.pnc_id)
+                if appliance:
+                    name = (
+                        f"{appliance.name} {self.catalog_entry.friendly_name.lower()}"
+                    )
         # Get the last word from the 'name' variable
         # and compare to the command we are sending duplicate names
         # "air filter state reset reset" for instance

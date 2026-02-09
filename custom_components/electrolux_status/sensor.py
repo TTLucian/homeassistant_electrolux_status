@@ -59,8 +59,8 @@ class ElectroluxSensor(ElectroluxEntity, SensorEntity):
     @property
     def name(self) -> str:
         """Return the name of the sensor."""
-        # Check for friendly name first using entity_key
-        friendly_name = FRIENDLY_NAMES.get(self.entity_key)
+        # Check for friendly name first using entity_name
+        friendly_name = FRIENDLY_NAMES.get(self.entity_name)
         if friendly_name:
             return friendly_name
         # Fall back to catalog entry friendly name

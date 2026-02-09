@@ -133,16 +133,6 @@ class ElectroluxLibraryEntity:
                 words.append(group.lower())
         return " ".join(words).lower().capitalize()
 
-    # def get_sensor_name_old(self, attr_name: str, container: str | None = None):
-    #     """Convert sensor format.
-
-    #     ex: "fCMiscellaneousState/detergentExtradosage" to "Detergent extradosage".
-    #     """
-    #     attr_name = attr_name.rpartition("/")[-1] or attr_name
-    #     attr_name = attr_name[0].upper() + attr_name[1:]
-    #     attr_name = " ".join(re.findall("[A-Z][^A-Z]*", attr_name))
-    #     return attr_name.capitalize()
-
     def get_entity_name(self, attr_name: str) -> str:
         """Extract Entity Name.
 
@@ -340,11 +330,3 @@ class ElectroluxLibraryEntity:
                 sources.append(key)
 
         return sources
-
-    # def sources_list_old(self):
-    #     _LOGGER.warning(self.capabilities)
-    #     return [
-    #         key
-    #         for key in list(self.capabilities.keys())
-    #         if not key.startswith("applianceCareAndMaintenance")
-    #     ]

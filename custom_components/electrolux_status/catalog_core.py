@@ -60,7 +60,7 @@ CATALOG_BASE: dict[str, ElectroluxDevice] = {
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_icon="mdi:timelapse",
     ),
-    "connectivityState": ElectroluxDevice(
+    "connectionState": ElectroluxDevice(
         capability_info={"access": "read", "type": "string"},
         device_class=None,
         unit=None,
@@ -128,6 +128,7 @@ CATALOG_BASE: dict[str, ElectroluxDevice] = {
         unit=None,
         entity_category=EntityCategory.CONFIG,
         entity_icon="mdi:restart",
+        entity_registry_enabled_default=False,
     ),
     "networkInterface/swAncAndRevision": ElectroluxDevice(
         capability_info={"access": "read", "type": "string"},

@@ -50,8 +50,8 @@ class ElectroluxBinarySensor(ElectroluxEntity, BinarySensorEntity):
     @property
     def name(self) -> str:
         """Return the name of the binary sensor."""
-        # Check for friendly name first using entity_key
-        friendly_name = FRIENDLY_NAMES.get(self.entity_key)
+        # Check for friendly name first using entity_name
+        friendly_name = FRIENDLY_NAMES.get(self.entity_name)
         if friendly_name:
             return friendly_name
         # Fall back to catalog entry friendly name
@@ -77,13 +77,13 @@ class ElectroluxBinarySensor(ElectroluxEntity, BinarySensorEntity):
         value = self.extract_value()
 
         # Special handling for food probe insertion state
-        if self.entity_key == "foodProbeInsertionState":
+        if self.entity_name == "foodProbeInsertionState":
             live_value = self.reported_state.get("foodProbeInsertionState")
             if live_value is not None:
                 # Show 'On' when inserted
                 value = live_value == "INSERTED"
         # Special handling for cleaning and probe end sensors
-        elif self.entity_key in ["ovcleaning_ended", "ovfood_probe_end_of_cooking"]:
+        elif self.entity_name in ["ovcleaning_ended", "ovfood_probe_end_of_cooking"]:
             # Check processPhase - return On if STOPPED (process completed)
             process_phase = self.reported_state.get("processPhase")
             if process_phase == "STOPPED":

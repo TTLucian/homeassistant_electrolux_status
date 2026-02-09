@@ -1,5 +1,6 @@
 """Entity platform for Electrolux Status."""
 
+import asyncio
 import hashlib
 import logging
 from typing import Any, cast
@@ -176,6 +177,11 @@ class ElectroluxEntity(CoordinatorEntity):
         # Preserving or migrating existing entity_ids should be done
         # via the entity registry APIs during setup, not by assigning
         # `self.entity_id` here which can break users' automations.
+
+        # Rate limiting for commands
+        self._last_command_time: float = 0
+        self._min_command_interval: float = 1.0  # 1 second minimum between commands
+
         _LOGGER.debug("Electrolux new entity %s for appliance %s", name, pnc_id)
 
     def setup(self, data: Appliances) -> None:
@@ -205,7 +211,15 @@ class ElectroluxEntity(CoordinatorEntity):
             normalized_attr = normalized_attr.strip("_")
         return f"{api_key_hash}-{normalized_attr}-{self.entity_source or 'root'}-{self.pnc_id}"
 
-    # Disabled this as this removes the value from display : there is no readonly property for entities
+    # NOTE: available property is intentionally not implemented
+    # Reason: Setting available=False hides the entity value completely,
+    # which is undesirable - we want users to see the last known state
+    # even when the appliance is disconnected.
+    #
+    # If we need to show connection status, we should:
+    # 1. Add a separate connection_state sensor
+    # 2. Use entity attributes to show "Last updated: X minutes ago"
+    # 3. Keep the entity available=True to preserve value visibility
     # @property
     # def available(self) -> bool:
     #     if (self._entity_category == EntityCategory.DIAGNOSTIC
@@ -230,6 +244,11 @@ class ElectroluxEntity(CoordinatorEntity):
         if appliances is None:
             return
         self.appliance_status = appliances.get_appliance(self.pnc_id).state
+        # Only clear cached value if reported value differs from cached value
+        reported_value = self.extract_value()
+        if self._cached_value is not None:
+            if self._cached_value != reported_value:
+                self._cached_value = None
         self.async_write_ha_state()
 
     def get_connection_state(self) -> str | None:
@@ -255,6 +274,13 @@ class ElectroluxEntity(CoordinatorEntity):
         """Return reported state of the appliance."""
         return self.appliance_status.get("properties", {}).get("reported", {})
 
+    @reported_state.setter
+    def reported_state(self, value: dict[str, Any]) -> None:
+        """Set reported state for testing purposes."""
+        if not hasattr(self, "appliance_status") or not self.appliance_status:
+            self.appliance_status = {"properties": {"reported": {}}}
+        self.appliance_status["properties"]["reported"] = value
+
     @property
     def is_dam_appliance(self) -> bool:
         """Return True if this is a DAM (One Connected Platform) appliance."""
@@ -266,6 +292,11 @@ class ElectroluxEntity(CoordinatorEntity):
         if self.catalog_entry and self.catalog_entry.friendly_name:
             return self.catalog_entry.friendly_name.capitalize()
         return self._name
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self.is_remote_control_enabled()
 
     @property
     def icon(self) -> str | None:
@@ -347,6 +378,15 @@ class ElectroluxEntity(CoordinatorEntity):
 
     def extract_value(self) -> Any:
         """Return the appliance attributes of the entity."""
+        # For constant access, return value from capability metadata
+        if self.capability.get("access") == "constant":
+            # Return default value or 0 for constants
+            result = self.capability.get("default", 0)
+            _LOGGER.debug(
+                "Extracted constant value for %s: %s", self.entity_attr, result
+            )
+            return result
+
         root_attribute: list[str] | None = self.root_attribute
         attribute = self.entity_attr
         if self.appliance_status:
@@ -407,7 +447,7 @@ class ElectroluxEntity(CoordinatorEntity):
         Returns True if remote control status contains 'ENABLED'
         (including 'NOT_SAFETY_RELEVANT_ENABLED') or is None.
         """
-        if not self.appliance_status:
+        if not hasattr(self, "appliance_status") or not self.appliance_status:
             return False
 
         # Check for remoteControl in the appliance status
@@ -457,3 +497,21 @@ class ElectroluxEntity(CoordinatorEntity):
     #         "device_class": str(self.device_class),
     #         "capability": str(self.capability),
     #     }
+
+    async def _rate_limit_command(self) -> None:
+        """Enforce minimum interval between commands."""
+        import time
+
+        now = time.time()
+        time_since_last = now - self._last_command_time
+
+        if time_since_last < self._min_command_interval:
+            wait_time = self._min_command_interval - time_since_last
+            _LOGGER.debug(
+                "Rate limiting command for %s, waiting %.2fs",
+                self.entity_attr,
+                wait_time,
+            )
+            await asyncio.sleep(wait_time)
+
+        self._last_command_time = time.time()

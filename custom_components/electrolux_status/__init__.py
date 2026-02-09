@@ -1,9 +1,11 @@
 """electrolux status integration."""
 
+import asyncio
 import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    EVENT_HOMEASSISTANT_STARTED,
     EVENT_HOMEASSISTANT_STOP,
 )
 from homeassistant.core import HomeAssistant
@@ -20,7 +22,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
-from .coordinator import ElectroluxCoordinator
+from .coordinator import FIRST_REFRESH_TIMEOUT, ElectroluxCoordinator
 from .util import get_electrolux_session
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -68,12 +70,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("async_setup_entry setup_entities")
     await coordinator.setup_entities()
     _LOGGER.debug("async_setup_entry listen_websocket")
-    await coordinator.listen_websocket()
-    _LOGGER.debug("async_setup_entry launch_websocket_renewal_task")
-    await coordinator.launch_websocket_renewal_task()
+    # Start websocket listening as background task to avoid blocking setup
+    coordinator.hass.async_create_task(coordinator.listen_websocket())
 
     _LOGGER.debug("async_setup_entry async_config_entry_first_refresh")
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        await asyncio.wait_for(
+            coordinator.async_config_entry_first_refresh(), timeout=FIRST_REFRESH_TIMEOUT
+        )
+    except (asyncio.TimeoutError, Exception) as err:
+        # Handle both timeouts and other exceptions gracefully
+        _LOGGER.warning(
+            "Electrolux first refresh failed or timed out (%s); will retry in background",
+            err,
+        )
+        # Don't set last_update_success to False here - let HA retry naturally
 
     if not coordinator.last_update_success:
         raise ConfigEntryNotReady
@@ -85,12 +96,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("async_setup_entry async_forward_entry_setups")
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Setup cleanup handlers
-    async def _close_api(event):
-        await coordinator.api.close()
+    _LOGGER.debug("async_setup_entry scheduling websocket renewal task")
+
+    # Schedule websocket renewal as background task after HA startup completes to avoid blocking
+    # Use proper HA pattern: per-entry task with automatic cleanup via async_on_unload
+    async def start_renewal_task(event=None):
+        coordinator.renew_task = hass.async_create_task(
+            coordinator.renew_websocket(), name=f"Electrolux renewal - {entry.title}"
+        )
+
+        # Bind task cleanup to entry lifecycle - ensures task is cancelled when entry is unloaded/reloaded
+        def cleanup_task():
+            if coordinator.renew_task:
+                coordinator.renew_task.cancel()
+
+        entry.async_on_unload(cleanup_task)
+
+    # Start renewal task after HA has fully started to prevent blocking startup
+    entry.async_on_unload(
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, start_renewal_task)
+    )
+
+    async def _close_coordinator(event):
+        """Close coordinator resources on HA shutdown."""
+        try:
+            await coordinator.close_websocket()
+            await coordinator.api.close()
+        except Exception as ex:
+            _LOGGER.debug("Error during HA shutdown cleanup: %s", ex)
 
     entry.async_on_unload(
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _close_api)
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _close_coordinator)
     )
     entry.async_on_unload(entry.add_update_listener(update_listener))
 

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
+
+if TYPE_CHECKING:
+    from .entity import ElectroluxEntity
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.button import ButtonDeviceClass
@@ -61,7 +64,13 @@ class ApplianceData:
 
 
 class Appliance:
-    """Define the Appliance Class."""
+    """Define the Appliance Class.
+
+    Note: pnc_id and appliance_id refer to the same thing:
+    - pnc_id: Used internally (historical name)
+    - appliance_id: Used in API calls (API name)
+    Both represent the unique appliance identifier.
+    """
 
     brand: str
     device: str
@@ -87,6 +96,7 @@ class Appliance:
         self.brand = brand
         self.state: ApplianceState = state
         self.entities: list[Any] = []
+        self._catalog_cache: dict[str, Any] | None = None
 
     @property
     def reported_state(self) -> dict[str, Any]:
@@ -145,6 +155,10 @@ class Appliance:
     @property
     def catalog(self) -> dict[str, Any]:
         """Return the defined catalog for the appliance."""
+        # Return cached catalog if available
+        if self._catalog_cache is not None:
+            return self._catalog_cache
+
         from .catalog_core import CATALOG_BY_TYPE
 
         # Start with the base catalog
@@ -163,6 +177,8 @@ class Appliance:
             for key, device in model_catalog.items():
                 new_catalog[key] = device
 
+        # Cache and return
+        self._catalog_cache = new_catalog
         return new_catalog
 
     def get_state(self, attr_name: str) -> dict[str, Any] | None:
@@ -196,7 +212,31 @@ class Appliance:
                     property_name,
                 )
                 # Update the specific property in reported_state
-                self.reported_state[property_name] = property_value
+
+                # HANDLE NESTED PROPERTIES
+                if "/" in property_name:
+                    # Handle nested path like "userSelections/program"
+                    parts = property_name.split("/")
+                    target = self.reported_state
+
+                    # Navigate to the parent dictionary
+                    for part in parts[:-1]:
+                        if part not in target:
+                            target[part] = {}
+                        elif not isinstance(target[part], dict):
+                            _LOGGER.warning(
+                                "Cannot update nested property %s: parent %s is not a dict",
+                                property_name,
+                                part,
+                            )
+                            return
+                        target = target[part]
+
+                    # Set the final value
+                    target[parts[-1]] = property_value
+                else:
+                    # Simple flat property update
+                    self.reported_state[property_name] = property_value
             else:
                 # Handle full state updates - preserve constant values
                 # Store constant values before merge
@@ -224,14 +264,21 @@ class Appliance:
             for entity in self.entities:
                 entity.update(self.state)
 
-        except Exception as ex:  # noqa: BLE001
-            _LOGGER.debug(
-                "Electrolux status could not update reported data with %s. %s",
-                reported_data,
+        except (KeyError, ValueError, TypeError, AttributeError) as ex:
+            _LOGGER.error(
+                "Data validation error updating reported data for %s: %s. Data: %s",
+                self.pnc_id,
                 ex,
+                reported_data,
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unexpected error updating reported data for %s. Data: %s",
+                self.pnc_id,
+                reported_data,
             )
 
-    def get_entity(self, capability: str) -> list[Any]:
+    def get_entity(self, capability: str) -> list[ElectroluxEntity]:
         """Return the entity."""
         entity_type = self.data.get_entity_type(capability)
         entity_name = self.data.get_entity_name(capability)
@@ -247,8 +294,26 @@ class Appliance:
         # get the item definition from the catalog
         catalog_item = self.catalog.get(capability, None)
         if catalog_item:
+            # Check if catalog specifies a custom entity_source
+            if catalog_item.capability_info.get("entity_source"):
+                category = catalog_item.capability_info["entity_source"]
             if capability_info is None:
                 capability_info = catalog_item.capability_info
+                # For catalog-only entities, determine entity type from capability_info
+                if entity_type is None and capability_info:
+                    cap_type = capability_info.get("type")
+                    access = capability_info.get("access", "read")
+                    if cap_type in ("number", "int") and access in (
+                        "readwrite",
+                        "write",
+                    ):
+                        entity_type = NUMBER
+                    elif cap_type == "temperature" and access in ("readwrite", "write"):
+                        entity_type = NUMBER
+                    elif cap_type == "boolean" and access == "readwrite":
+                        entity_type = SWITCH
+                    elif access == "read":
+                        entity_type = SENSOR
             else:
                 # Merge catalog capability_info into API capability_info
                 capability_info.update(catalog_item.capability_info)
@@ -404,7 +469,11 @@ class Appliance:
         for static_attribute in STATIC_ATTRIBUTES:
             _LOGGER.debug("Electrolux static_attribute %s", static_attribute)
             # attr not found in state, next attr
-            if self.get_state(static_attribute) is None:
+            attr_in_reported = self.get_state(static_attribute) is not None
+            attr_at_top_level = (
+                self.state.get(static_attribute) is not None if self.state else False
+            )
+            if not (attr_in_reported or attr_at_top_level):
                 continue
             if catalog_item := self.catalog.get(static_attribute, None):
                 if (entity := self.get_entity(static_attribute)) is None:
@@ -421,6 +490,18 @@ class Appliance:
                 capabilities[keys[-1]] = catalog_item.capability_info
                 _LOGGER.debug("Electrolux adding static_attribute %s", static_attribute)
                 entities.extend(entity)
+
+        # Add catalog entities that have capability_info defined, even if not in API capabilities
+        # This ensures entities like targetDuration are always created for applicable appliance types
+        for catalog_key, catalog_item in self.catalog.items():
+            if catalog_item.capability_info and catalog_key not in capabilities_names:
+                # Check if this entity should be created for this appliance type
+                if entity := self.get_entity(catalog_key):
+                    _LOGGER.debug(
+                        "Electrolux adding catalog entity %s not in API capabilities",
+                        catalog_key,
+                    )
+                    entities.extend(list(entity))
 
         # For each capability src
         if capabilities_names:

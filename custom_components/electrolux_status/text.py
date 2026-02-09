@@ -1,5 +1,6 @@
 """Text platform for Electrolux Status."""
 
+# import asyncio
 import logging
 from typing import Any
 
@@ -12,7 +13,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN, TEXT
 from .entity import ElectroluxEntity
 from .model import ElectroluxDevice
-from .util import ElectroluxApiClient, map_command_error_to_home_assistant_error
+from .util import (
+    AuthenticationError,
+    ElectroluxApiClient,
+    map_command_error_to_home_assistant_error,
+)
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -81,6 +86,28 @@ class ElectroluxText(ElectroluxEntity, TextEntity):
         return TEXT
 
     @property
+    def native_max_len(self) -> int | None:
+        """Return the maximum length of the text."""
+        return self.capability.get("maxLength")
+
+    @property
+    def native_min_len(self) -> int:
+        """Return the minimum length of the text."""
+        return 0
+
+    @property
+    def native_pattern(self) -> str | None:
+        """Return the pattern for the text."""
+        return None
+
+    @property
+    def native_mode(self) -> str:
+        """Return the mode for the text."""
+        if self.catalog_entry and self.catalog_entry.mode:
+            return self.catalog_entry.mode
+        return "text"
+
+    @property
     def native_value(self) -> str | None:
         """Return the current text value."""
         value = self.extract_value()
@@ -118,10 +145,14 @@ class ElectroluxText(ElectroluxEntity, TextEntity):
         _LOGGER.debug("Electrolux set text value %s", command)
         try:
             result = await client.execute_appliance_command(self.pnc_id, command)
+        except AuthenticationError as auth_ex:
+            # Handle authentication errors by triggering reauthentication
+            await self.coordinator.handle_authentication_error(auth_ex)
         except Exception as ex:
             # Use shared error mapping for all errors
             raise map_command_error_to_home_assistant_error(
                 ex, self.entity_attr, _LOGGER
             ) from ex
         _LOGGER.debug("Electrolux set text value result %s", result)
+        # await asyncio.sleep(2)
         await self.coordinator.async_request_refresh()

@@ -99,6 +99,12 @@ class ElectroluxStatusFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[ca
             user_input.get("refresh_token"),
         )
         if valid:
+            # Dismiss the token refresh issue since re-authentication succeeded
+            from homeassistant.helpers import issue_registry
+
+            issue_registry.async_delete_issue(
+                self.hass, DOMAIN, "invalid_refresh_token"
+            )
             # Update the existing entry with new tokens
             return self.async_update_reload_and_abort(
                 self._get_reauth_entry(), data=user_input

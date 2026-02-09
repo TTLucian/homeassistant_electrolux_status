@@ -48,6 +48,9 @@ class ElectroluxDevice:
     # invert the true / false state of the entity
     state_invert: bool = False
 
+    # mode for text entities (text, password, etc.)
+    mode: str | None = None
+
     # some entities return a string dict in capabilities but
     # an int in the api values. A defined dictionary can convert
     # those values from integer back to dictionary

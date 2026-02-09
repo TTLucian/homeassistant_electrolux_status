@@ -89,7 +89,9 @@ class ElectroluxSelect(ElectroluxEntity, SelectEntity):
                 if entry and "disabled" in entry:
                     continue
 
-                label = self.format_label(value)
+                label = entry.get("label") if entry else self.format_label(value)
+                if label is None:
+                    label = self.format_label(value)
                 if label is not None:
                     self.options_list[label] = value
 
@@ -110,12 +112,17 @@ class ElectroluxSelect(ElectroluxEntity, SelectEntity):
             value = f"{value} °F"
         return str(value)
 
+    # TODO: Implement dynamic icon based on current state
+    # When implemented, this should:
+    # - Show different icons for different program states
+    # - Indicate if appliance is available/unavailable
+    # Example icons: mdi:stove for oven programs, mdi:snowflake for cooling
     # @property
     # def icon(self) -> str:
     #     """Return a representative icon."""
-    #     if not self.available or self.current_option == "TODO":
-    #         return "mdi:XXX"
-    #     return "mdi:YYY"
+    #     if not self.available:
+    #         return "mdi:alert-circle"
+    #     return "mdi:state-machine"
 
     @property
     def current_option(self) -> str:
@@ -137,7 +144,7 @@ class ElectroluxSelect(ElectroluxEntity, SelectEntity):
                 label = list(self.options_list.keys())[
                     list(self.options_list.values()).index(value)
                 ]
-        except Exception as ex:  # noqa: BLE001
+        except (ValueError, IndexError) as ex:
             _LOGGER.info(
                 "Electrolux error value %s does not exist in the list %s. %s",
                 value,
@@ -179,7 +186,10 @@ class ElectroluxSelect(ElectroluxEntity, SelectEntity):
 
         value: Any = self.options_list.get(option, None)
         if value is None:
-            return
+            raise HomeAssistantError("Invalid option")
+
+        # Rate limit commands
+        await self._rate_limit_command()
 
         if (
             isinstance(self.unit, UnitOfTemperature)
@@ -209,6 +219,18 @@ class ElectroluxSelect(ElectroluxEntity, SelectEntity):
                     "reported", {}
                 )
                 program_uid = reported.get("userSelections", {}).get("programUID")
+
+                # Validate programUID
+                if not program_uid:
+                    _LOGGER.error(
+                        "Cannot send command: programUID missing for appliance %s",
+                        self.pnc_id,
+                    )
+                    raise HomeAssistantError(
+                        "Cannot change setting: appliance state is incomplete. "
+                        "Please wait for the appliance to initialize."
+                    )
+
                 command = {
                     self.entity_source: {
                         "programUID": program_uid,
@@ -226,13 +248,25 @@ class ElectroluxSelect(ElectroluxEntity, SelectEntity):
         except AuthenticationError as auth_ex:
             # Handle authentication errors by triggering reauthentication
             await self.coordinator.handle_authentication_error(auth_ex)
+            return  # Explicit return (unreachable but clear)
         except Exception as ex:
             # Use shared error mapping for all errors
             raise map_command_error_to_home_assistant_error(
                 ex, self.entity_attr, _LOGGER, self.capability
             ) from ex
         _LOGGER.debug("Electrolux select option result %s", result)
-        await self.coordinator.async_request_refresh()
+        # State will be updated via websocket streaming
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.data is None:
+            return
+        appliances = self.coordinator.data.get("appliances", None)
+        if appliances is None:
+            return
+        self.appliance_status = appliances.get_appliance(self.pnc_id).state
+        # For select entities, don't use caching to avoid stale data issues
+        self.async_write_ha_state()
 
     @property
     def options(self) -> list[str]:
