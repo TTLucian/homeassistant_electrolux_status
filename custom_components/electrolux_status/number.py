@@ -162,52 +162,52 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
 
     @property
     def native_max_value(self) -> float:
-        """Return max value: Program-specific -> Global -> Appliance Hard Limit."""
-        # 1. Try Dynamic Lookups
+        """Return max value: Catalog (Minutes) -> Program -> Appliance API."""
+        # 1. Catalog is the Source of Truth (already in correct units)
+        if (
+            self._catalog_entry
+            and (cat_max := self._catalog_entry.capability_info.get("max")) is not None
+        ):
+            return float(cat_max)
+
+        # 2. Fallback to API/Program logic
         max_val = self._get_program_constraint("max") or self.capability.get("max")
 
-        # 2. Hard Fallbacks from 944188772.txt
-        if max_val is None:
-            if self.entity_attr == "targetTemperatureC":
-                max_val = 230.0
-            elif self.entity_attr == "targetFoodProbeTemperatureC":
-                max_val = 99.0
-            elif self.unit == UnitOfTime.MINUTES:
-                max_val = 1439.0
-            else:
-                max_val = 100.0
-
-        # 3. Centralized Unit Conversion
-        if self.unit == UnitOfTime.MINUTES:
+        # 3. Convert only if coming from API (seconds)
+        if self.unit == UnitOfTime.MINUTES and max_val is not None:
             return float(time_seconds_to_minutes(max_val))  # type: ignore[arg-type]
-        return float(max_val)
+        return float(max_val or 100.0)
 
     @property
     def native_min_value(self) -> float:
-        """Return min value: Program-specific -> Global -> Appliance Hard Limit."""
+        """Return min value: Catalog (Minutes) -> Program -> Appliance API."""
+        if (
+            self._catalog_entry
+            and (cat_min := self._catalog_entry.capability_info.get("min")) is not None
+        ):
+            return float(cat_min)
+
         min_val = self._get_program_constraint("min") or self.capability.get("min")
 
-        if min_val is None:
-            if self.entity_attr == "targetFoodProbeTemperatureC":
-                min_val = 30.0
-            else:
-                min_val = 0.0
-
-        if self.unit == UnitOfTime.MINUTES:
+        if self.unit == UnitOfTime.MINUTES and min_val is not None:
             return float(time_seconds_to_minutes(min_val))  # type: ignore[arg-type]
-        return float(min_val)
+        return float(min_val or 0.0)
 
     @property
     def native_step(self) -> float:
-        """Return step value: Program-specific -> Global -> Safe Default."""
+        """Return step value: Catalog (Minutes) -> Program -> Safe Default."""
+        if (
+            self._catalog_entry
+            and (cat_step := self._catalog_entry.capability_info.get("step"))
+            is not None
+        ):
+            return float(cat_step)
+
         step_val = self._get_program_constraint("step") or self.capability.get("step")
 
-        if not step_val:  # Handle None or 0.0
-            step_val = 1.0 if self.unit == UnitOfTime.MINUTES else 1.0
-
-        if self.unit == UnitOfTime.MINUTES:
+        if self.unit == UnitOfTime.MINUTES and step_val is not None:
             return float(time_seconds_to_minutes(step_val))  # type: ignore[arg-type]
-        return float(step_val)
+        return float(step_val or 1.0)
 
     async def async_set_native_value(self, value: float) -> None:
         """Update the current value."""
