@@ -76,7 +76,7 @@ async def _async_get_diagnostics(
     """Return diagnostics for a config entry."""
     app_entry: ElectroluxCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    data = {
+    data: dict[str, Any] = {
         "user_metadata": None,
         "appliances_info": None,
         "appliances_list": None,
@@ -84,15 +84,18 @@ async def _async_get_diagnostics(
         "errors": [],
     }
 
+    errors_list = data["errors"]  # Type: list[str]
+    appliances_detail = data["appliances_detail"]  # Type: dict[str, Any]
+
     try:
         data["user_metadata"] = await app_entry.api.get_user_metadata()
     except Exception as ex:
-        data["errors"].append(f"Failed to get user metadata: {ex}")
+        errors_list.append(f"Failed to get user metadata: {ex}")
 
     try:
         data["appliances_list"] = await app_entry.api.get_appliances_list()
     except Exception as ex:
-        data["errors"].append(f"Failed to get appliances list: {ex}")
+        errors_list.append(f"Failed to get appliances list: {ex}")
         # Can't continue without appliances list
         return async_redact_data(data, REDACT_CONFIG)
 
@@ -102,7 +105,7 @@ async def _async_get_diagnostics(
                 [x["applianceId"] for x in data["appliances_list"]]
             )
         except Exception as ex:
-            data["errors"].append(f"Failed to get appliances info: {ex}")
+            errors_list.append(f"Failed to get appliances info: {ex}")
 
         for appliance in data["appliances_list"]:
             appliance_id = appliance["applianceId"]
@@ -123,7 +126,7 @@ async def _async_get_diagnostics(
                 appliance_detail["state_error"] = str(ex)
 
             if appliance_detail:
-                data["appliances_detail"][appliance_id] = appliance_detail
+                appliances_detail[appliance_id] = appliance_detail
 
     return async_redact_data(data, REDACT_CONFIG)
 

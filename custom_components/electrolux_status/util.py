@@ -740,12 +740,22 @@ class ElectroluxApiClient:
             )
             return
         try:
+            # Find the config entry
+            entries = self.hass.config_entries.async_entries(DOMAIN)
+            if entries:
+                entry = entries[0]
+                issue_id = f"invalid_refresh_token_{entry.entry_id}"
+            else:
+                issue_id = "invalid_refresh_token"
+
             _LOGGER.warning("Token refresh failed: %s. Creating HA issue.", message)
             issue_registry.async_create_issue(
                 self.hass,
                 DOMAIN,
-                "invalid_refresh_token",
+                issue_id,
                 is_fixable=True,
+                is_persistent=True,
+                issue_domain=DOMAIN,
                 severity=issue_registry.IssueSeverity.CRITICAL,
                 translation_key="invalid_refresh_token",
                 translation_placeholders={"message": message},

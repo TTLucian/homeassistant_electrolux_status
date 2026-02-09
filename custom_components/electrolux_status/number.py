@@ -85,6 +85,11 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
         if base_device_class == "temperature":
             return NumberDeviceClass.TEMPERATURE
 
+        # Check capability type for automatic device class mapping
+        capability_type = self.capability.get("type")
+        if capability_type == "temperature":
+            return NumberDeviceClass.TEMPERATURE
+
         # Default to None if no valid NumberDeviceClass is found
         return None
 
@@ -112,6 +117,13 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
             # Return 0 if not supported by current program
             if not self._is_supported_by_program():
                 return 0.0
+
+        # For non-global entities, return None if not supported by current program
+        if (
+            self.entity_attr not in ["targetDuration", "startTime"]
+            and not self._is_supported_by_program()
+        ):
+            return None
 
         # Special handling for targetDuration - convert from seconds to minutes for display
         if self.entity_attr == "targetDuration":
@@ -280,6 +292,8 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
             self.appliance_status.get("properties", {})
             .get("reported", {})
             .get("remoteControl")
+            if self.appliance_status
+            else None
         )
         _LOGGER.debug(
             "Number control remote control check for %s: status=%s",
@@ -322,11 +336,11 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
         # Convert constraints back to seconds for time-based entities since formatted_value is in seconds
         if self.native_unit_of_measurement == UnitOfTime.MINUTES:
             if min_val is not None:
-                min_val = time_minutes_to_seconds(min_val)
+                min_val = float(time_minutes_to_seconds(min_val))  # type: ignore[arg-type]
             if max_val is not None:
-                max_val = time_minutes_to_seconds(max_val)
+                max_val = float(time_minutes_to_seconds(max_val))  # type: ignore[arg-type]
             if step_val is not None:
-                step_val = time_minutes_to_seconds(step_val)
+                step_val = float(time_minutes_to_seconds(step_val))  # type: ignore[arg-type]
 
         # Clamp to current min/max bounds
         if min_val is not None:
@@ -362,6 +376,8 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
                 self.appliance_status.get("properties", {})
                 .get("reported", {})
                 .get("latamUserSelections", {})
+                if self.appliance_status
+                else {}
             )
             if not current_selections:
                 _LOGGER.error(
@@ -377,7 +393,11 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
             command = {"latamUserSelections": new_selections}
         elif self.entity_source == "userSelections":
             # Safer access to avoid KeyError if userSelections is missing
-            reported = self.appliance_status.get("properties", {}).get("reported", {})
+            reported = (
+                self.appliance_status.get("properties", {}).get("reported", {})
+                if self.appliance_status
+                else {}
+            )
             program_uid = reported.get("userSelections", {}).get("programUID")
 
             # Validate programUID
@@ -588,23 +608,6 @@ class ElectroluxNumber(ElectroluxEntity, NumberEntity):
         else:
             # Literal value
             return operand.get("value")
-
-    @property
-    def state(self) -> Any:
-        """Return the state of the entity.
-
-        Do NOT check program-specific support for root/global capabilities
-        such as `targetDuration` and `startTime` - these are appliance-level
-        properties and should be visible and report their native value.
-        """
-        # Global capabilities: always return native value (even if None)
-        if self.entity_attr in ["targetDuration", "startTime"]:
-            return self.native_value
-
-        # For non-global entities, preserve program-aware behavior
-        if not self._is_supported_by_program():
-            return None
-        return self.native_value
 
     @property
     def entity_registry_enabled_default(self) -> bool:

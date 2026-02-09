@@ -3,8 +3,10 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.const import EntityCategory
 from homeassistant.exceptions import HomeAssistantError
 
+from custom_components.electrolux_status.const import SELECT
 from custom_components.electrolux_status.select import ElectroluxSelect
 
 
@@ -41,13 +43,13 @@ class TestElectroluxSelect:
             name="Test Select",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="select",
+            entity_type=SELECT,
             entity_name="test_select",
             entity_attr="testAttr",
             entity_source=None,
             unit=None,
-            device_class=None,
-            entity_category=None,
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
         )
         entity.appliance_status = {"properties": {"reported": {"testAttr": "OPTION1"}}}
@@ -107,13 +109,13 @@ class TestElectroluxSelect:
             name="Test Select",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="select",
+            entity_type=SELECT,
             entity_name="test_select",
             entity_attr="testAttr",
             entity_source=None,
             unit=None,
-            device_class=None,
-            entity_category=None,
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
         )
         # The options_list should use the custom label
@@ -170,13 +172,13 @@ class TestElectroluxSelect:
             name="Test Select",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="select",
+            entity_type=SELECT,
             entity_name="test_select",
             entity_attr="testAttr",
             entity_source="userSelections",
             unit=None,
-            device_class=None,
-            entity_category=None,
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
         )
         entity.api = MagicMock()
@@ -216,13 +218,13 @@ class TestElectroluxSelect:
             name="Test Select",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="select",
+            entity_type=SELECT,
             entity_name="test_select",
             entity_attr="testAttr",
             entity_source="oven",
             unit=None,
-            device_class=None,
-            entity_category=None,
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
         )
         entity.api = MagicMock()
@@ -264,13 +266,13 @@ class TestElectroluxSelect:
             name="Test Select",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="select",
+            entity_type=SELECT,
             entity_name="test_select",
             entity_attr="testAttr",
             entity_source=None,
             unit=None,
-            device_class=None,
-            entity_category=None,
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
         )
         assert entity.options_list == {}

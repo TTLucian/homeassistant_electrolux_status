@@ -127,8 +127,10 @@ class ElectroluxText(ElectroluxEntity, TextEntity):
         if self.entity_source:
             if self.entity_source == "userSelections":
                 # Safer access to avoid KeyError if userSelections is missing
-                reported = self.appliance_status.get("properties", {}).get(
-                    "reported", {}
+                reported = (
+                    self.appliance_status.get("properties", {}).get("reported", {})
+                    if self.appliance_status
+                    else {}
                 )
                 program_uid = reported.get("userSelections", {}).get("programUID")
                 command = {

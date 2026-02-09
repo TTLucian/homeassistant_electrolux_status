@@ -124,7 +124,7 @@ class ElectroluxEntity(CoordinatorEntity):
 
     _attr_has_entity_name = True
 
-    appliance_status: dict[str, Any]
+    appliance_status: dict[str, Any] | None
 
     def __init__(
         self,
@@ -272,14 +272,21 @@ class ElectroluxEntity(CoordinatorEntity):
     @property
     def reported_state(self) -> dict[str, Any]:
         """Return reported state of the appliance."""
+        if self.appliance_status is None:
+            return {}
         return self.appliance_status.get("properties", {}).get("reported", {})
 
     @reported_state.setter
-    def reported_state(self, value: dict[str, Any]) -> None:
+    def reported_state(self, value: dict[str, Any] | None) -> None:
         """Set reported state for testing purposes."""
-        if not hasattr(self, "appliance_status") or not self.appliance_status:
-            self.appliance_status = {"properties": {"reported": {}}}
-        self.appliance_status["properties"]["reported"] = value
+        if value is None:
+            if not hasattr(self, "appliance_status") or not self.appliance_status:
+                self.appliance_status = {"properties": {"reported": {}}}
+            self.appliance_status["properties"]["reported"] = {}
+        else:
+            if not hasattr(self, "appliance_status") or not self.appliance_status:
+                self.appliance_status = {"properties": {"reported": {}}}
+            self.appliance_status["properties"]["reported"] = value
 
     @property
     def is_dam_appliance(self) -> bool:

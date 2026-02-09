@@ -169,6 +169,8 @@ class ElectroluxSelect(ElectroluxEntity, SelectEntity):
             self.appliance_status.get("properties", {})
             .get("reported", {})
             .get("remoteControl")
+            if self.appliance_status
+            else None
         )
         # Check for disabled states
         if remote_control is not None and (
@@ -207,7 +209,11 @@ class ElectroluxSelect(ElectroluxEntity, SelectEntity):
 
         _LOGGER.debug(
             "Electrolux select option before reported status %s",
-            self.appliance_status["properties"]["reported"],
+            (
+                self.appliance_status.get("properties", {}).get("reported", {})
+                if self.appliance_status
+                else {}
+            ),
         )
 
         client: ElectroluxApiClient = self.api
@@ -215,8 +221,10 @@ class ElectroluxSelect(ElectroluxEntity, SelectEntity):
         if self.entity_source:
             if self.entity_source == "userSelections":
                 # Safer access to avoid KeyError if userSelections is missing
-                reported = self.appliance_status.get("properties", {}).get(
-                    "reported", {}
+                reported = (
+                    self.appliance_status.get("properties", {}).get("reported", {})
+                    if self.appliance_status
+                    else {}
                 )
                 program_uid = reported.get("userSelections", {}).get("programUID")
 

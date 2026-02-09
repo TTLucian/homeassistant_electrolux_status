@@ -4,7 +4,7 @@ import hashlib
 import logging
 from typing import Any
 
-from homeassistant.components.button import ButtonEntity
+from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, Platform
 from homeassistant.core import HomeAssistant
@@ -89,10 +89,12 @@ class ElectroluxButton(ElectroluxEntity, ButtonEntity):
         return BUTTON
 
     @property
-    def device_class(self) -> str | None:
+    def device_class(self) -> ButtonDeviceClass | None:
         """Return the device class for the button entity."""
         if self._catalog_entry and hasattr(self._catalog_entry, "device_class"):
-            return self._catalog_entry.device_class
+            device_class = self._catalog_entry.device_class
+            if isinstance(device_class, ButtonDeviceClass):
+                return device_class
         return self._device_class
 
     @property
@@ -160,8 +162,10 @@ class ElectroluxButton(ElectroluxEntity, ButtonEntity):
         if self.entity_source:
             if self.entity_source == "userSelections":
                 # Safer access to avoid KeyError if userSelections is missing
-                reported = self.appliance_status.get("properties", {}).get(
-                    "reported", {}
+                reported = (
+                    self.appliance_status.get("properties", {}).get("reported", {})
+                    if self.appliance_status
+                    else {}
                 )
                 program_uid = reported.get("userSelections", {}).get("programUID")
                 command = {

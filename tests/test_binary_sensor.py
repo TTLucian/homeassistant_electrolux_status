@@ -3,8 +3,10 @@
 from unittest.mock import MagicMock
 
 import pytest
+from homeassistant.const import EntityCategory
 
 from custom_components.electrolux_status.binary_sensor import ElectroluxBinarySensor
+from custom_components.electrolux_status.const import BINARY_SENSOR
 
 
 class TestElectroluxBinarySensor:
@@ -31,17 +33,17 @@ class TestElectroluxBinarySensor:
         """Create a test binary sensor entity."""
         entity = ElectroluxBinarySensor(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Test Binary Sensor",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="binary_sensor",
+            entity_type=BINARY_SENSOR,
             entity_name="test_binary_sensor",
             entity_attr="testAttr",
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
             icon="mdi:test",
         )
         entity.appliance_status = {"properties": {"reported": {"testAttr": True}}}
@@ -55,17 +57,17 @@ class TestElectroluxBinarySensor:
         """Test name property uses friendly name mapping."""
         entity = ElectroluxBinarySensor(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Original Name",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="binary_sensor",
+            entity_type=BINARY_SENSOR,
             entity_name="ovwater_tank_empty",  # This has a friendly name mapping
             entity_attr="waterTankEmpty",
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
             icon="mdi:test",
         )
         assert entity.name == "Water Tank Status"
@@ -81,17 +83,17 @@ class TestElectroluxBinarySensor:
 
         entity = ElectroluxBinarySensor(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Original Name",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="binary_sensor",
+            entity_type=BINARY_SENSOR,
             entity_name="test_sensor",
             entity_attr="testAttr",
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
             icon="mdi:test",
             catalog_entry=catalog_entry,
         )
@@ -112,17 +114,17 @@ class TestElectroluxBinarySensor:
 
         entity = ElectroluxBinarySensor(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Test Binary Sensor",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="binary_sensor",
+            entity_type=BINARY_SENSOR,
             entity_name="test_binary_sensor",
             entity_attr="testAttr",
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
             icon="mdi:test",
             catalog_entry=catalog_entry,
         )
@@ -162,17 +164,17 @@ class TestElectroluxBinarySensor:
 
         entity = ElectroluxBinarySensor(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Test Binary Sensor",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="binary_sensor",
+            entity_type=BINARY_SENSOR,
             entity_name="test_binary_sensor",
             entity_attr="testAttr",
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
             icon="mdi:test",
             catalog_entry=catalog_entry,
         )
@@ -189,17 +191,17 @@ class TestElectroluxBinarySensor:
         }
         entity = ElectroluxBinarySensor(
             coordinator=mock_coordinator,
-            capability=capability,
             name="Test Binary Sensor",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="binary_sensor",
+            entity_type=BINARY_SENSOR,
             entity_name="test_binary_sensor",
             entity_attr="testAttr",
             entity_source=None,
+            capability=capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
             icon="mdi:test",
         )
         assert entity.is_on is True
@@ -208,17 +210,17 @@ class TestElectroluxBinarySensor:
         """Test special handling for food probe insertion state."""
         entity = ElectroluxBinarySensor(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Food Probe",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="binary_sensor",
+            entity_type=BINARY_SENSOR,
             entity_name="foodProbeInsertionState",
             entity_attr="foodProbeInsertionState",
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
             icon="mdi:test",
         )
         entity.reported_state = {"foodProbeInsertionState": "INSERTED"}
@@ -231,17 +233,17 @@ class TestElectroluxBinarySensor:
         """Test special handling for cleaning ended sensor."""
         entity = ElectroluxBinarySensor(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Cleaning Status",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="binary_sensor",
+            entity_type=BINARY_SENSOR,
             entity_name="ovcleaning_ended",
             entity_attr="cleaningEnded",
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
             icon="mdi:test",
         )
         entity.reported_state = {"processPhase": "STOPPED"}
@@ -254,17 +256,17 @@ class TestElectroluxBinarySensor:
         """Test special handling for probe end of cooking sensor."""
         entity = ElectroluxBinarySensor(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Probe End of Cooking",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="binary_sensor",
+            entity_type=BINARY_SENSOR,
             entity_name="ovfood_probe_end_of_cooking",
             entity_attr="foodProbeEndOfCooking",
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
             icon="mdi:test",
         )
         entity.reported_state = {"processPhase": "STOPPED"}
@@ -284,17 +286,17 @@ class TestElectroluxBinarySensor:
 
         entity = ElectroluxBinarySensor(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Test Binary Sensor",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="binary_sensor",
+            entity_type=BINARY_SENSOR,
             entity_name="test_binary_sensor",
             entity_attr="testAttr",
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
             icon="mdi:test",
             catalog_entry=catalog_entry,
         )

@@ -4,9 +4,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.number import NumberDeviceClass, NumberMode
-from homeassistant.const import UnitOfTemperature, UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfTemperature, UnitOfTime
 from homeassistant.exceptions import HomeAssistantError
 
+from custom_components.electrolux_status.const import NUMBER
 from custom_components.electrolux_status.number import ElectroluxNumber
 
 
@@ -38,17 +39,17 @@ class TestElectroluxNumber:
         """Create a test number entity."""
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Test Number",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="test_number",
             entity_attr="testAttr",
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
         )
         entity.appliance_status = {
@@ -65,17 +66,17 @@ class TestElectroluxNumber:
         """Test that time entities use BOX mode."""
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Start Time",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="start_time",
             entity_attr="startTime",
             entity_source=None,
+            capability=mock_capability,
             unit=UnitOfTime.MINUTES,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:clock-start",
         )
         assert entity.mode == NumberMode.BOX
@@ -89,17 +90,17 @@ class TestElectroluxNumber:
         capability = {"access": "readwrite", "type": "temperature"}
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=capability,
             name="Temperature",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="temperature",
             entity_attr="targetTemperatureC",
             entity_source=None,
-            unit=UnitOfTemperature.CELSIUS,
-            device_class="temperature",
-            entity_category=None,
+            capability=capability,
+            unit=None,
+            device_class=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:thermometer",
         )
         assert entity.device_class == NumberDeviceClass.TEMPERATURE
@@ -120,17 +121,17 @@ class TestElectroluxNumber:
         }
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=capability,
             name="Target Duration",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="target_duration",
             entity_attr="targetDuration",
             entity_source=None,
+            capability=capability,
             unit=UnitOfTime.MINUTES,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:timelapse",
         )
         entity.appliance_status = {
@@ -151,17 +152,17 @@ class TestElectroluxNumber:
         }
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=capability,
             name="Start Time",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="start_time",
             entity_attr="startTime",
             entity_source=None,
+            capability=capability,
             unit=UnitOfTime.MINUTES,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:clock-start",
         )
         entity.appliance_status = {
@@ -174,17 +175,17 @@ class TestElectroluxNumber:
         """Test startTime returns None for invalid time (-1)."""
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Start Time",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="start_time",
             entity_attr="startTime",
             entity_source=None,
+            capability=mock_capability,
             unit=UnitOfTime.MINUTES,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:clock-start",
         )
         entity.appliance_status = {"properties": {"reported": {"startTime": -1}}}
@@ -196,17 +197,17 @@ class TestElectroluxNumber:
         capability = {"access": "readwrite", "type": "temperature"}
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=capability,
             name="Food Probe Temp",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="food_probe_temp",
             entity_attr="targetFoodProbeTemperatureC",
             entity_source=None,
+            capability=capability,
             unit=UnitOfTemperature.CELSIUS,
             device_class="temperature",
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:thermometer-probe",
         )
         entity.appliance_status = {
@@ -234,17 +235,17 @@ class TestElectroluxNumber:
         }  # 7200 seconds
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=capability,
             name="Time Entity",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="time_entity",
             entity_attr="testTime",
             entity_source=None,
+            capability=capability,
             unit=UnitOfTime.MINUTES,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:clock",
         )
         entity._get_program_constraint = MagicMock(return_value=None)
@@ -275,17 +276,17 @@ class TestElectroluxNumber:
         }  # 300 seconds
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=capability,
             name="Time Entity",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="time_entity",
             entity_attr="testTime",
             entity_source=None,
+            capability=capability,
             unit=UnitOfTime.MINUTES,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:clock",
         )
         entity._get_program_constraint = MagicMock(return_value=None)
@@ -298,27 +299,32 @@ class TestElectroluxNumber:
         """Test basic value setting."""
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Test Number",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="test_number",
             entity_attr="targetDuration",  # Use a supported entity
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
         )
+        entity.hass = mock_coordinator.hass  # Set hass for the entity
         entity.api = MagicMock()
+        entity.api.execute_appliance_command = AsyncMock()  # Make it async
         entity._rate_limit_command = AsyncMock()
         entity.appliance_status = {
             "properties": {"reported": {"remoteControl": "ENABLED"}}
         }
 
+        # Mock async_write_ha_state to avoid hass requirement
+        entity.async_write_ha_state = MagicMock()
+
         # Check that the method returns True
-        assert entity._is_supported_by_program() == True
+        assert entity._is_supported_by_program()
 
         with patch.object(entity, "_is_supported_by_program", return_value=True), patch(
             "custom_components.electrolux_status.number.format_command_for_appliance"
@@ -340,17 +346,17 @@ class TestElectroluxNumber:
         capability = {"access": "readwrite", "type": "temperature"}
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=capability,
             name="Food Probe Temp",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="food_probe_temp",
             entity_attr="targetFoodProbeTemperatureC",
             entity_source=None,
+            capability=capability,
             unit=UnitOfTemperature.CELSIUS,
             device_class="temperature",
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:thermometer-probe",
         )
         entity.reported_state = {"foodProbeInsertionState": "NOT_INSERTED"}
@@ -366,7 +372,7 @@ class TestElectroluxNumber:
         with pytest.raises(
             HomeAssistantError, match="not supported by the current program"
         ):
-            await entity.async_set_native_value(50.0)
+            await number_entity.async_set_native_value(50.0)
 
     @pytest.mark.asyncio
     async def test_async_set_native_value_time_conversion(self, mock_coordinator):
@@ -374,25 +380,30 @@ class TestElectroluxNumber:
         capability = {"access": "readwrite", "type": "number", "max": 7200, "step": 60}
         entity = ElectroluxNumber(
             coordinator=mock_coordinator,
-            capability=capability,
             name="Target Duration",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="number",
+            entity_type=NUMBER,
             entity_name="target_duration",
             entity_attr="targetDuration",
             entity_source=None,
+            capability=capability,
             unit=UnitOfTime.MINUTES,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:timelapse",
         )
+        entity.hass = mock_coordinator.hass  # Set hass for the entity
         entity.api = MagicMock()
+        entity.api.execute_appliance_command = AsyncMock()  # Make it async
         entity._rate_limit_command = AsyncMock()
         entity._is_supported_by_program = MagicMock(return_value=True)
         entity.appliance_status = {
             "properties": {"reported": {"remoteControl": "ENABLED"}}
         }
+
+        # Mock async_write_ha_state to avoid hass requirement
+        entity.async_write_ha_state = MagicMock()
 
         with patch(
             "custom_components.electrolux_status.number.format_command_for_appliance"

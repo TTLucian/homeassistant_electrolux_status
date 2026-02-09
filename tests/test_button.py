@@ -3,8 +3,10 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.const import EntityCategory
 
 from custom_components.electrolux_status.button import ElectroluxButton
+from custom_components.electrolux_status.const import BUTTON
 
 
 class TestElectroluxButton:
@@ -36,13 +38,13 @@ class TestElectroluxButton:
             name="Test Button",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="button",
+            entity_type=BUTTON,
             entity_name="test_button",
             entity_attr="testAttr",
             entity_source=None,
-            unit=None,
-            device_class=None,
-            entity_category=None,
+            unit="",
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
             catalog_entry=None,
             val_to_send="PRESS",
@@ -61,13 +63,13 @@ class TestElectroluxButton:
             name="Original Name",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="button",
+            entity_type=BUTTON,
             entity_name="ovstart_pause",  # This has a friendly name mapping
             entity_attr="startPause",
             entity_source=None,
-            unit=None,
-            device_class=None,
-            entity_category=None,
+            unit="",
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
             catalog_entry=None,
             val_to_send="PRESS",
@@ -89,13 +91,13 @@ class TestElectroluxButton:
             name="Original Name",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="button",
+            entity_type=BUTTON,
             entity_name="test_button",
             entity_attr="testAttr",
             entity_source=None,
-            unit=None,
-            device_class=None,
-            entity_category=None,
+            unit="",
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
             catalog_entry=catalog_entry,
             val_to_send="PRESS",
@@ -157,13 +159,13 @@ class TestElectroluxButton:
             name="Test Button",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="button",
+            entity_type=BUTTON,
             entity_name="test_button",
             entity_attr="testAttr",
             entity_source="userSelections",
-            unit=None,
-            device_class=None,
-            entity_category=None,
+            unit="",
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
             catalog_entry=None,
             val_to_send="PRESS",
@@ -217,13 +219,13 @@ class TestElectroluxButton:
             name="Test Button",
             config_entry=mock_coordinator.config_entry,
             pnc_id="1:TEST_PNC",  # DAM appliance
-            entity_type="button",
+            entity_type=BUTTON,
             entity_name="test_button",
             entity_attr="testAttr",
             entity_source="airConditioner",
-            unit=None,
-            device_class=None,
-            entity_category=None,
+            unit="",
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
             catalog_entry=None,
             val_to_send="PRESS",
@@ -253,13 +255,13 @@ class TestElectroluxButton:
             name="Test Button",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",  # Legacy appliance
-            entity_type="button",
+            entity_type=BUTTON,
             entity_name="test_button",
             entity_attr="testAttr",
             entity_source=None,  # No source for legacy
-            unit=None,
-            device_class=None,
-            entity_category=None,
+            unit="",
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
             catalog_entry=None,
             val_to_send="PRESS",
@@ -282,11 +284,13 @@ class TestElectroluxButton:
 
     def test_device_class_from_catalog(self, mock_coordinator, mock_capability):
         """Test device class from catalog entry."""
+        from homeassistant.components.button import ButtonDeviceClass
+
         from custom_components.electrolux_status.model import ElectroluxDevice
 
         catalog_entry = ElectroluxDevice(
             capability_info=mock_capability,
-            device_class="restart",
+            device_class=ButtonDeviceClass.RESTART,
         )
 
         entity = ElectroluxButton(
@@ -295,15 +299,15 @@ class TestElectroluxButton:
             name="Test Button",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="button",
+            entity_type=BUTTON,
             entity_name="test_button",
             entity_attr="testAttr",
             entity_source=None,
-            unit=None,
-            device_class=None,
-            entity_category=None,
+            unit="",
+            device_class="",
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
             catalog_entry=catalog_entry,
             val_to_send="PRESS",
         )
-        assert entity.device_class == "restart"
+        assert entity.device_class == ButtonDeviceClass.RESTART

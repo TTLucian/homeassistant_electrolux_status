@@ -23,6 +23,8 @@ async def test_report_token_refresh_creates_issue(monkeypatch):
     from custom_components.electrolux_status.util import DOMAIN, ElectroluxApiClient
 
     hass = MagicMock()
+    # Mock config_entries to return empty list so issue_id doesn't include entry_id
+    hass.config_entries.async_entries.return_value = []
 
     client = ElectroluxApiClient("api", "access", "refresh", hass)
 

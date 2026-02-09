@@ -3,8 +3,10 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.const import EntityCategory
 from homeassistant.exceptions import HomeAssistantError
 
+from custom_components.electrolux_status.const import SWITCH
 from custom_components.electrolux_status.switch import ElectroluxSwitch
 
 
@@ -33,17 +35,17 @@ class TestElectroluxSwitch:
         """Create a test switch entity."""
         entity = ElectroluxSwitch(
             coordinator=mock_coordinator,
-            capability=mock_capability,
             name="Test Switch",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="switch",
+            entity_type=SWITCH,
             entity_name="test_switch",
             entity_attr="testAttr",
             entity_source=None,
+            capability=mock_capability,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
         )
         entity.appliance_status = {"properties": {"reported": {"testAttr": True}}}
@@ -97,13 +99,13 @@ class TestElectroluxSwitch:
             name="Test Switch",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="switch",
+            entity_type=SWITCH,
             entity_name="test_switch",
             entity_attr="testAttr",
             entity_source=None,
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
             catalog_entry=catalog_entry,
         )
@@ -168,13 +170,13 @@ class TestElectroluxSwitch:
             name="Test Switch",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="switch",
+            entity_type=SWITCH,
             entity_name="test_switch",
             entity_attr="testAttr",
             entity_source="userSelections",
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
         )
         entity.api = MagicMock()
@@ -214,13 +216,13 @@ class TestElectroluxSwitch:
             name="Test Switch",
             config_entry=mock_coordinator.config_entry,
             pnc_id="TEST_PNC",
-            entity_type="switch",
+            entity_type=SWITCH,
             entity_name="test_switch",
             entity_attr="testAttr",
             entity_source="oven",
             unit=None,
             device_class=None,
-            entity_category=None,
+            entity_category=EntityCategory.CONFIG,
             icon="mdi:test",
         )
         entity.api = MagicMock()

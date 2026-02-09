@@ -80,7 +80,9 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
         self.renew_interval = renew_interval
         self._sse_task = None  # Track SSE task
         self._deferred_tasks: set = set()  # Track deferred update tasks
-        self._deferred_tasks_by_appliance: dict[str, asyncio.Task] = {}  # Track deferred tasks by appliance
+        self._deferred_tasks_by_appliance: dict[str, asyncio.Task] = (
+            {}
+        )  # Track deferred tasks by appliance
         self._appliances_lock = asyncio.Lock()  # Shared lock for appliances dict
         self._last_cleanup_time = 0  # Track when we last ran appliance cleanup
 
@@ -157,24 +159,19 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
         except (ConnectionError, TimeoutError, asyncio.TimeoutError) as ex:
             # Network errors - log and raise UpdateFailed
             _LOGGER.error(
-                "Network error during deferred update for %s: %s",
-                appliance_id,
-                ex
+                "Network error during deferred update for %s: %s", appliance_id, ex
             )
             raise UpdateFailed(f"Network error: {ex}") from ex
         except (KeyError, ValueError, TypeError) as ex:
             # Data validation errors - log and raise UpdateFailed
             _LOGGER.error(
-                "Data error during deferred update for %s: %s",
-                appliance_id,
-                ex
+                "Data error during deferred update for %s: %s", appliance_id, ex
             )
             raise UpdateFailed(f"Invalid data: {ex}") from ex
         except Exception as ex:
             # Catch-all for unexpected errors
             _LOGGER.exception(
-                "Unexpected error during deferred update for %s",
-                appliance_id
+                "Unexpected error during deferred update for %s", appliance_id
             )
             raise UpdateFailed(f"Unexpected error: {ex}") from ex
 
@@ -221,7 +218,12 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
             do_deferred = False
             for key, value in appliance_data.items():
                 if key in TIME_ENTITIES_TO_UPDATE:
-                    if value is not None and TIME_ENTITY_THRESHOLD_LOW < value <= TIME_ENTITY_THRESHOLD_HIGH:
+                    if (
+                        value is not None
+                        and TIME_ENTITY_THRESHOLD_LOW
+                        < value
+                        <= TIME_ENTITY_THRESHOLD_HIGH
+                    ):
                         do_deferred = True
                         break
             if do_deferred:
@@ -230,23 +232,22 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
                     old_task = self._deferred_tasks_by_appliance[appliance_id]
                     if not old_task.done():
                         _LOGGER.debug(
-                            "Cancelling existing deferred update for %s",
-                            appliance_id
+                            "Cancelling existing deferred update for %s", appliance_id
                         )
                         old_task.cancel()
-                
+
                 # Create new deferred task
                 task = self.hass.async_create_task(
                     self.deferred_update(appliance_id, DEFERRED_UPDATE_DELAY)
                 )
                 self._deferred_tasks_by_appliance[appliance_id] = task
-                
+
                 # Cleanup callback
                 def cleanup_deferred(t: asyncio.Task) -> None:
                     """Remove task from tracking when done."""
                     if self._deferred_tasks_by_appliance.get(appliance_id) == t:
                         del self._deferred_tasks_by_appliance[appliance_id]
-                
+
                 task.add_done_callback(cleanup_deferred)
             return
 
@@ -296,7 +297,10 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
         do_deferred = False
         for key, value in appliance_data.items():
             if key in TIME_ENTITIES_TO_UPDATE:
-                if value is not None and TIME_ENTITY_THRESHOLD_LOW < value <= TIME_ENTITY_THRESHOLD_HIGH:
+                if (
+                    value is not None
+                    and TIME_ENTITY_THRESHOLD_LOW < value <= TIME_ENTITY_THRESHOLD_HIGH
+                ):
                     do_deferred = True
                     break
         if do_deferred:
@@ -349,7 +353,9 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
                 if self._sse_task and not self._sse_task.done():
                     self._sse_task.cancel()
                     try:
-                        await asyncio.wait_for(self._sse_task, timeout=TASK_CANCEL_TIMEOUT)
+                        await asyncio.wait_for(
+                            self._sse_task, timeout=TASK_CANCEL_TIMEOUT
+                        )
                     except (asyncio.CancelledError, asyncio.TimeoutError):
                         _LOGGER.debug(
                             "Electrolux SSE task was cancelled during renewal, as expected"
@@ -358,8 +364,13 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
 
                 # Disconnect and reconnect with timeout
                 try:
-                    await asyncio.wait_for(self.api.disconnect_websocket(), timeout=WEBSOCKET_DISCONNECT_TIMEOUT)
-                    await asyncio.wait_for(self.listen_websocket(), timeout=UPDATE_TIMEOUT)
+                    await asyncio.wait_for(
+                        self.api.disconnect_websocket(),
+                        timeout=WEBSOCKET_DISCONNECT_TIMEOUT,
+                    )
+                    await asyncio.wait_for(
+                        self.listen_websocket(), timeout=UPDATE_TIMEOUT
+                    )
                     consecutive_failures = 0  # Reset on success
                 except asyncio.TimeoutError:
                     _LOGGER.warning("Timeout during websocket renewal")
@@ -406,11 +417,11 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
         for task in tasks_to_cancel:
             if not task.done():
                 task.cancel()
-        
+
         # Wait for all tasks to complete cancellation
         if tasks_to_cancel:
             await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
-        
+
         self._deferred_tasks.clear()
 
         # Cancel per-appliance deferred tasks
@@ -418,16 +429,18 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
         for task in appliance_tasks:
             if not task.done():
                 task.cancel()
-        
+
         # Wait for cancellations
         if appliance_tasks:
             await asyncio.gather(*appliance_tasks, return_exceptions=True)
-        
+
         self._deferred_tasks_by_appliance.clear()
 
         # Close API connection with shorter timeout
         try:
-            await asyncio.wait_for(self.api.disconnect_websocket(), timeout=API_DISCONNECT_TIMEOUT)
+            await asyncio.wait_for(
+                self.api.disconnect_websocket(), timeout=API_DISCONNECT_TIMEOUT
+            )
         except (asyncio.TimeoutError, Exception) as ex:
             if isinstance(ex, asyncio.TimeoutError):
                 _LOGGER.debug("Electrolux API disconnect timeout")
@@ -476,7 +489,7 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
                 for task in appliance_tasks:
                     if not task.done():
                         task.cancel()
-                
+
                 # Wait for cancellations to complete
                 await asyncio.gather(*appliance_tasks, return_exceptions=True)
 
@@ -500,17 +513,20 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
             # Make concurrent API calls for this appliance
             info_task = asyncio.create_task(
                 asyncio.wait_for(
-                    self.api.get_appliances_info([appliance_id]), timeout=APPLIANCE_STATE_TIMEOUT
+                    self.api.get_appliances_info([appliance_id]),
+                    timeout=APPLIANCE_STATE_TIMEOUT,
                 )
             )
             state_task = asyncio.create_task(
                 asyncio.wait_for(
-                    self.api.get_appliance_state(appliance_id), timeout=APPLIANCE_STATE_TIMEOUT
+                    self.api.get_appliance_state(appliance_id),
+                    timeout=APPLIANCE_STATE_TIMEOUT,
                 )
             )
             capabilities_task = asyncio.create_task(
                 asyncio.wait_for(
-                    self.api.get_appliance_capabilities(appliance_id), timeout=APPLIANCE_CAPABILITY_TIMEOUT
+                    self.api.get_appliance_capabilities(appliance_id),
+                    timeout=APPLIANCE_CAPABILITY_TIMEOUT,
                 )
             )
 
@@ -521,7 +537,9 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
                 )
             except (ConnectionError, TimeoutError, asyncio.TimeoutError) as ex:
                 _LOGGER.warning(
-                    "Network error getting required data for appliance %s: %s", appliance_id, ex
+                    "Network error getting required data for appliance %s: %s",
+                    appliance_id,
+                    ex,
                 )
                 # Cancel the capabilities task if it hasn't completed
                 if not capabilities_task.done():
@@ -562,6 +580,7 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
                 return
 
             from typing import cast
+
             appliance = Appliance(
                 coordinator=self,
                 pnc_id=appliance_id,
@@ -607,7 +626,7 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data for all appliances concurrently."""
-        appliances: Appliances = self.data.get("appliances")  # type: ignore[union-attr]
+        appliances: Appliances = self.data.get("appliances")  # type: ignore[assignment,union-attr]
         app_dict = appliances.get_appliances()
 
         if not app_dict:
@@ -639,14 +658,14 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
         # Run all updates concurrently
         results = await asyncio.gather(
             *(_update_single(aid, aobj) for aid, aobj in app_dict.items()),
-            return_exceptions=True
+            return_exceptions=True,
         )
 
         # Check if any auth errors occurred (these should propagate)
         auth_errors = []
         other_errors = []
         successful = 0
-        
+
         for result in results:
             if isinstance(result, ConfigEntryAuthFailed):
                 auth_errors.append(result)
@@ -654,42 +673,42 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
                 other_errors.append(result)
             elif result is True:
                 successful += 1
-        
+
         # Propagate authentication errors immediately
         if auth_errors:
             _LOGGER.error(
-                "Authentication failed during update (%d appliances)",
-                len(auth_errors)
+                "Authentication failed during update (%d appliances)", len(auth_errors)
             )
             raise auth_errors[0]  # Raise first auth error
-        
+
         # Check if all appliances failed
         if successful == 0 and len(app_dict) > 0:
             _LOGGER.error(
                 "All appliance updates failed. Errors: %s",
-                [str(e) for e in other_errors[:3]]  # Show first 3 errors
+                [str(e) for e in other_errors[:3]],  # Show first 3 errors
             )
             raise UpdateFailed("All appliance updates failed")
-        
+
         # Log partial failures
         if other_errors:
             _LOGGER.debug(
                 "Some appliances failed to update (%d/%d successful)",
                 successful,
-                len(app_dict)
+                len(app_dict),
             )
 
         # Periodically clean up removed appliances (once per day)
         # Check if we should run cleanup
-        if not hasattr(self, '_last_cleanup_time'):
+        if not hasattr(self, "_last_cleanup_time"):
             self._last_cleanup_time = 0
-        
+
         import time
+
         current_time = time.time()
         if current_time - self._last_cleanup_time > CLEANUP_INTERVAL:  # 24 hours
             _LOGGER.debug("Running periodic appliance cleanup")
             await self.cleanup_removed_appliances()
-            self._last_cleanup_time = current_time
+            self._last_cleanup_time = int(current_time)
 
         return self.data
 
@@ -700,36 +719,36 @@ class ElectroluxCoordinator(DataUpdateCoordinator):
             appliances_list = await self.api.get_appliances_list()
             if not appliances_list:
                 return
-            
+
             # Get current appliance IDs
             current_ids = set()
             for appliance_json in appliances_list:
                 if appliance_id := appliance_json.get("applianceId"):
                     current_ids.add(appliance_id)
-            
+
             # Get appliances we're tracking
             tracked_appliances = self.data.get("appliances")
             if not tracked_appliances:
                 return
-            
+
             tracked_ids = set(tracked_appliances.appliances.keys())
-            
+
             # Find appliances that were removed
             removed_ids = tracked_ids - current_ids
-            
+
             if removed_ids:
                 _LOGGER.info(
                     "Removing %d appliances no longer in account: %s",
                     len(removed_ids),
-                    removed_ids
+                    removed_ids,
                 )
-                
+
                 # Remove from tracking
                 for appliance_id in removed_ids:
                     del tracked_appliances.appliances[appliance_id]
-                
+
                 # Trigger entity registry cleanup
                 self.async_set_updated_data(self.data)
-            
+
         except Exception as ex:
             _LOGGER.debug("Error during appliance cleanup: %s", ex)
