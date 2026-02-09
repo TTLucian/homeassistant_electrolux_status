@@ -889,13 +889,22 @@ class ElectroluxApiClient:
     async def disconnect_websocket(self):
         """Disconnect SSE event stream."""
         try:
-            if hasattr(self, "_sse_task") and self._sse_task:
+            if (
+                hasattr(self, "_sse_task")
+                and self._sse_task
+                and not self._sse_task.done()
+            ):
                 self._sse_task.cancel()
                 try:
                     await self._sse_task
                 except asyncio.CancelledError:
                     _LOGGER.debug(
                         "Electrolux SSE task was cancelled during disconnect, as expected"
+                    )
+                except Exception:
+                    # Task finished with an exception, but we don't care during shutdown
+                    _LOGGER.debug(
+                        "Electrolux SSE task finished with exception during disconnect"
                     )
                 self._sse_task = None
             _LOGGER.debug("SSE disconnect completed")

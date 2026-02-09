@@ -122,7 +122,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Close coordinator resources on HA shutdown."""
         try:
             await coordinator.close_websocket()
-            await coordinator.api.close()
         except Exception as ex:
             _LOGGER.debug("Error during HA shutdown cleanup: %s", ex)
 
