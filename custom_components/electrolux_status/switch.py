@@ -11,7 +11,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, SWITCH
 from .entity import ElectroluxEntity
-from .util import ElectroluxApiClient, string_to_boolean
+from .util import (
+    AuthenticationError,
+    ElectroluxApiClient,
+    format_command_for_appliance,
+    map_command_error_to_home_assistant_error,
+)
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -41,7 +46,7 @@ class ElectroluxSwitch(ElectroluxEntity, SwitchEntity):
 
     @property
     def entity_domain(self):
-        """Enitity domain for the entry. Used for consistent entity_id."""
+        """Entity domain for the entry. Used for consistent entity_id."""
         return SWITCH
 
     @property
@@ -53,9 +58,6 @@ class ElectroluxSwitch(ElectroluxEntity, SwitchEntity):
             if self.catalog_entry and self.catalog_entry.state_mapping:
                 mapping = self.catalog_entry.state_mapping
                 value = self.get_state_attr(mapping)
-        # Electrolux returns strings for some true/false states
-        if value is not None and isinstance(value, str):
-            value = string_to_boolean(value, False)
 
         if value is None:
             return self._cached_value if self._cached_value is not None else False
@@ -71,40 +73,36 @@ class ElectroluxSwitch(ElectroluxEntity, SwitchEntity):
 
     async def switch(self, value: bool) -> None:
         """Control switch state."""
-        # Check if remote control is enabled
-        remote_control = (
-            self.appliance_status.get("properties", {})
-            .get("reported", {})
-            .get("remoteControl")
-        )
-        if remote_control is not None and remote_control not in [
-            "ENABLED",
-            "NOT_SAFETY_RELEVANT_ENABLED",
-        ]:
+        # Check if remote control is enabled before sending command
+        if not self.is_remote_control_enabled():
             _LOGGER.warning(
-                "Cannot control %s for appliance %s: remote control is %s",
-                self.entity_attr,
+                "Remote control is disabled for appliance %s, cannot execute command for %s",
                 self.pnc_id,
-                remote_control,
+                self.entity_attr,
             )
             raise HomeAssistantError(
-                f"Remote control disabled (status: {remote_control})"
+                "Remote control is disabled for this appliance. Please check the appliance settings."
             )
 
         client: ElectroluxApiClient = self.api
-        # Electrolux bug - needs string not bool
-        command_value = "ON" if value else "OFF"
-        if "values" in self.capability:
-            command_value = "ON" if value else "OFF"
+        # Use dynamic capability-based value formatting
+        command_value = format_command_for_appliance(
+            self.capability, self.entity_attr, value
+        )
 
         command: dict[str, Any]
         if self.entity_source:
             if self.entity_source == "userSelections":
+                # Safer access to avoid KeyError if userSelections is missing
+                reported = (
+                    self.appliance_status.get("properties", {}).get("reported", {})
+                    if self.appliance_status
+                    else {}
+                )
+                program_uid = reported.get("userSelections", {}).get("programUID")
                 command = {
                     self.entity_source: {
-                        "programUID": self.appliance_status["properties"]["reported"][
-                            "userSelections"
-                        ]["programUID"],
+                        "programUID": program_uid,
                         self.entity_attr: command_value,
                     },
                 }
@@ -112,15 +110,18 @@ class ElectroluxSwitch(ElectroluxEntity, SwitchEntity):
                 command = {self.entity_source: {self.entity_attr: command_value}}
         else:
             command = {self.entity_attr: command_value}
-        _LOGGER.debug("Electrolux set value %s", command_value)
+        _LOGGER.debug("Electrolux set value")
         try:
-            result = await client.execute_appliance_command(self.pnc_id, command)
+            await client.execute_appliance_command(self.pnc_id, command)
+        except AuthenticationError as auth_ex:
+            # Handle authentication errors by triggering reauthentication
+            await self.coordinator.handle_authentication_error(auth_ex)
         except Exception as ex:
-            error_msg = str(ex).lower()
-            if "disconnected" in error_msg or "command_validation_error" in error_msg:
-                raise HomeAssistantError("Appliance is disconnected or not available")
-            raise
-        _LOGGER.debug("Electrolux set value result %s", result)
+            # Use shared error mapping for all errors
+            raise map_command_error_to_home_assistant_error(
+                ex, self.entity_attr, _LOGGER, self.capability
+            ) from ex
+        _LOGGER.debug("Electrolux set value completed")
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the entity on."""

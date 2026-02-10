@@ -6,7 +6,6 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import (
-    CONN_CLASS_CLOUD_PUSH,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -40,7 +39,6 @@ class ElectroluxStatusFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[ca
     """Config flow for Electrolux Status."""
 
     VERSION = 1
-    CONNECTION_CLASS = CONN_CLASS_CLOUD_PUSH
 
     def __init__(self) -> None:
         """Initialize."""
@@ -101,10 +99,14 @@ class ElectroluxStatusFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[ca
             user_input.get("refresh_token"),
         )
         if valid:
+            # Dismiss the token refresh issue since re-authentication succeeded
+            from homeassistant.helpers import issue_registry
+
+            entry = self._get_reauth_entry()
+            issue_id = f"invalid_refresh_token_{entry.entry_id}"
+            issue_registry.async_delete_issue(self.hass, DOMAIN, issue_id)
             # Update the existing entry with new tokens
-            return self.async_update_reload_and_abort(
-                self._get_reauth_entry(), data=user_input
-            )
+            return self.async_update_reload_and_abort(entry, data=user_input)
         self._errors["base"] = "invalid_auth"
         return None
 
@@ -169,7 +171,7 @@ class ElectroluxStatusFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[ca
             )
         return vol.Schema(data_schema)
 
-    async def _show_config_form(self, user_input, step_id="user"):
+    async def _show_config_form(self, user_input, step_id="user") -> ConfigFlowResult:
         """Show the configuration form to edit location data."""
         defaults = user_input or {}
 
@@ -186,7 +188,11 @@ class ElectroluxStatusFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[ca
         """Return true if credentials is valid."""
         try:
             client = get_electrolux_session(
-                api_key, access_token, refresh_token, async_get_clientsession(self.hass)
+                api_key,
+                access_token,
+                refresh_token,
+                async_get_clientsession(self.hass),
+                self.hass,
             )
             await client.get_appliances_list()
         except (ConnectionError, TimeoutError, ValueError, KeyError) as e:
@@ -209,7 +215,7 @@ class ElectroluxStatusOptionsFlowHandler(OptionsFlow):
         """Manage the options."""
         return await self.async_step_user()
 
-    def _get_options_schema(self):
+    def _get_options_schema(self) -> vol.Schema:
         """Get the options schema with current values."""
         # Get current values from config entry data and options
         current_api_key = self._config_entry.data.get(CONF_API_KEY, "")
@@ -262,7 +268,11 @@ class ElectroluxStatusOptionsFlowHandler(OptionsFlow):
         """Return true if credentials is valid."""
         try:
             client = get_electrolux_session(
-                api_key, access_token, refresh_token, async_get_clientsession(self.hass)
+                api_key,
+                access_token,
+                refresh_token,
+                async_get_clientsession(self.hass),
+                self.hass,
             )
             await client.get_appliances_list()
         except (ConnectionError, TimeoutError, ValueError, KeyError) as e:

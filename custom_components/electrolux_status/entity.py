@@ -1,10 +1,12 @@
 """Entity platform for Electrolux Status."""
 
+import asyncio
+import hashlib
 import logging
 from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, Platform
+from homeassistant.const import EntityCategory, Platform, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -12,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
-from .const import DOMAIN
+from .const import CONF_API_KEY, DOMAIN
 from .model import ElectroluxDevice
 from .models import Appliance, Appliances, ApplianceState
 from .util import ElectroluxApiClient
@@ -34,6 +36,41 @@ async def async_setup_entry(
                 for entity in appliance.entities
                 if entity.entity_type == "entity"
             ]
+
+            # Filter out fPPN_ prefixed entities if a matching non-prefixed entity exists
+            filtered_entities = []
+            entity_attrs = {entity.entity_attr for entity in entities}
+
+            for entity in entities:
+                entity_attr_lower = entity.entity_attr.lower()
+                # Skip fPPN prefixed entities if a matching non-prefixed entity exists
+                if entity_attr_lower.startswith("fppn"):
+                    base_attr = (
+                        entity_attr_lower.replace("fppn_", "")
+                        .replace("fppn", "")
+                        .strip("_")
+                    )
+                    # Check if any non-fPPN version exists
+                    has_matching_base = any(
+                        other_attr.lower()
+                        .replace("fppn_", "")
+                        .replace("fppn", "")
+                        .strip("_")
+                        == base_attr
+                        for other_attr in entity_attrs
+                        if not other_attr.lower().startswith("fppn")
+                    )
+                    if has_matching_base:
+                        _LOGGER.debug(
+                            "Skipping duplicate fPPN entity %s for appliance %s (base entity exists)",
+                            entity.entity_attr,
+                            appliance_id,
+                        )
+                        continue
+
+                filtered_entities.append(entity)
+
+            entities = filtered_entities
             _LOGGER.debug(
                 "Electrolux add %d entities to registry for appliance %s",
                 len(entities),
@@ -87,7 +124,7 @@ class ElectroluxEntity(CoordinatorEntity):
 
     _attr_has_entity_name = True
 
-    appliance_status: dict[str, Any]
+    appliance_status: dict[str, Any] | None
 
     def __init__(
         self,
@@ -106,7 +143,7 @@ class ElectroluxEntity(CoordinatorEntity):
         icon: str,
         catalog_entry: ElectroluxDevice | None = None,
     ) -> None:
-        """Initaliaze the entity."""
+        """Initialize the entity."""
         super().__init__(coordinator)
         self.root_attribute = ["properties", "reported"]
         self.data: Appliances | None = None
@@ -126,32 +163,63 @@ class ElectroluxEntity(CoordinatorEntity):
         self.pnc_id = pnc_id
         self.unit = unit
         self.capability = capability
+        # Set entity_key for consistent FRIENDLY_NAMES lookup
+        # Strip any 'fppn' prefix (with or without underscore) and make case-insensitive for robust matching
+        entity_attr_lower = entity_attr.lower()
+        if entity_attr_lower.startswith("fppn_"):
+            self.entity_key = entity_attr_lower.replace("fppn_", "").strip("_")
+        elif entity_attr_lower.startswith("fppn"):
+            self.entity_key = entity_attr_lower.replace("fppn", "").strip("_")
+        else:
+            self.entity_key = entity_attr_lower.strip("_")
         # Do not force `entity_id` here. Home Assistant's entity registry
         # manages stable `entity_id` values based on `unique_id`.
         # Preserving or migrating existing entity_ids should be done
         # via the entity registry APIs during setup, not by assigning
         # `self.entity_id` here which can break users' automations.
-        if catalog_entry:
-            self.entity_registry_enabled_default = (
-                catalog_entry.entity_registry_enabled_default
-            )
+
+        # Rate limiting for commands
+        self._last_command_time: float = 0
+        self._min_command_interval: float = 1.0  # 1 second minimum between commands
+
         _LOGGER.debug("Electrolux new entity %s for appliance %s", name, pnc_id)
 
     def setup(self, data: Appliances) -> None:
-        """Initialiaze setup."""
+        """Initialize setup."""
         self.data = data
 
     @property
     def entity_domain(self) -> str:
-        """Enitity domain for the entry."""
+        """Entity domain for the entry."""
         return "sensor"
 
     @property
     def unique_id(self) -> str:
         """Return a unique ID to use for this entity."""
-        return f"{self.config_entry.entry_id}-{self.entity_attr}-{self.entity_source or 'root'}-{self.pnc_id}"
+        # Use stable unique_id based on API key hash for consistent entity IDs
+        api_key = self.config_entry.data.get(CONF_API_KEY, "")
+        api_key_hash = (
+            hashlib.sha256(api_key.encode()).hexdigest()[:16] if api_key else "unknown"
+        )
+        # Normalize entity_attr by removing fPPN prefix for consistent unique_ids
+        normalized_attr = self.entity_attr.lower()
+        if normalized_attr.startswith("fppn_"):
+            normalized_attr = normalized_attr.replace("fppn_", "").strip("_")
+        elif normalized_attr.startswith("fppn"):
+            normalized_attr = normalized_attr.replace("fppn", "").strip("_")
+        else:
+            normalized_attr = normalized_attr.strip("_")
+        return f"{api_key_hash}-{normalized_attr}-{self.entity_source or 'root'}-{self.pnc_id}"
 
-    # Disabled this as this removes the value from display : there is no readonly property for entities
+    # NOTE: available property is intentionally not implemented
+    # Reason: Setting available=False hides the entity value completely,
+    # which is undesirable - we want users to see the last known state
+    # even when the appliance is disconnected.
+    #
+    # If we need to show connection status, we should:
+    # 1. Add a separate connection_state sensor
+    # 2. Use entity attributes to show "Last updated: X minutes ago"
+    # 3. Keep the entity available=True to preserve value visibility
     # @property
     # def available(self) -> bool:
     #     if (self._entity_category == EntityCategory.DIAGNOSTIC
@@ -176,6 +244,11 @@ class ElectroluxEntity(CoordinatorEntity):
         if appliances is None:
             return
         self.appliance_status = appliances.get_appliance(self.pnc_id).state
+        # Only clear cached value if reported value differs from cached value
+        reported_value = self.extract_value()
+        if self._cached_value is not None:
+            if self._cached_value != reported_value:
+                self._cached_value = None
         self.async_write_ha_state()
 
     def get_connection_state(self) -> str | None:
@@ -198,8 +271,39 @@ class ElectroluxEntity(CoordinatorEntity):
 
     @property
     def reported_state(self) -> dict[str, Any]:
-        """Return reported state of the appliance."""
-        return self.appliance_status.get("properties", {}).get("reported", {})
+        """Return reported state of the appliance, converting seconds to minutes for time entities."""
+        if self.appliance_status is None:
+            return {}
+
+        base_state = self.appliance_status.get("properties", {}).get("reported", {})
+
+        # Convert seconds to minutes for UI display when unit is SECONDS
+        if self.unit == UnitOfTime.SECONDS:
+            transformed_state = base_state.copy()
+            raw_seconds = base_state.get(self.entity_attr)
+            if raw_seconds is not None and isinstance(raw_seconds, (int, float)):
+                # Scale down for the 0-1439 UI range
+                transformed_state[self.entity_attr] = raw_seconds // 60
+            return transformed_state
+
+        return base_state
+
+    @reported_state.setter
+    def reported_state(self, value: dict[str, Any] | None) -> None:
+        """Set reported state for testing purposes."""
+        if value is None:
+            if not hasattr(self, "appliance_status") or not self.appliance_status:
+                self.appliance_status = {"properties": {"reported": {}}}
+            self.appliance_status["properties"]["reported"] = {}
+        else:
+            if not hasattr(self, "appliance_status") or not self.appliance_status:
+                self.appliance_status = {"properties": {"reported": {}}}
+            self.appliance_status["properties"]["reported"] = value
+
+    @property
+    def is_dam_appliance(self) -> bool:
+        """Return True if this is a DAM (One Connected Platform) appliance."""
+        return self.pnc_id.startswith("1:")
 
     @property
     def name(self) -> str:
@@ -209,9 +313,22 @@ class ElectroluxEntity(CoordinatorEntity):
         return self._name
 
     @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self.is_remote_control_enabled()
+
+    @property
     def icon(self) -> str | None:
         """Return the icon of the entity."""
         return self._icon
+
+    @property
+    def entity_registry_enabled_default(self) -> bool:
+        """Return if the entity should be enabled when first added to the entity registry."""
+        # Use catalog entry value if available, otherwise default to True
+        if self._catalog_entry:
+            return self._catalog_entry.entity_registry_enabled_default
+        return True
 
     # @property
     # def get_entity(self) -> ApplianceEntity:
@@ -280,6 +397,15 @@ class ElectroluxEntity(CoordinatorEntity):
 
     def extract_value(self) -> Any:
         """Return the appliance attributes of the entity."""
+        # For constant access, return value from capability metadata
+        if self.capability.get("access") == "constant":
+            # Return default value or 0 for constants
+            result = self.capability.get("default", 0)
+            _LOGGER.debug(
+                "Extracted constant value for %s: %s", self.entity_attr, result
+            )
+            return result
+
         root_attribute: list[str] | None = self.root_attribute
         attribute = self.entity_attr
         if self.appliance_status:
@@ -298,12 +424,28 @@ class ElectroluxEntity(CoordinatorEntity):
                 if self.entity_source:
                     category: dict[str, Any] | None = root.get(self.entity_source, None)
                     if category:
-                        return category.get(attribute)
+                        result = category.get(attribute)
+                        _LOGGER.debug(
+                            "Extracted value for %s/%s: %s",
+                            self.entity_source,
+                            attribute,
+                            result,
+                        )
+                        return result
                 else:
-                    return root.get(attribute, None)
+                    result = root.get(attribute, None)
+                    _LOGGER.debug("Extracted value for %s: %s", attribute, result)
+                    return result
+        _LOGGER.debug(
+            "No value found for entity %s (attr: %s, source: %s, appliance_status keys: %s)",
+            self.name,
+            self.entity_attr,
+            self.entity_source,
+            list(self.appliance_status.keys()) if self.appliance_status else None,
+        )
         return None
 
-    def update(self, appliance_status: ApplianceState | dict[str, Any]):
+    def update(self, appliance_status: ApplianceState | dict[str, Any]) -> None:
         """Update the appliance status."""
         # Cast needed because ApplianceState TypedDict is not directly assignable to dict[str, Any] in mypy,
         # despite being a subtype, due to TypedDict's structural typing constraints.
@@ -317,6 +459,47 @@ class ElectroluxEntity(CoordinatorEntity):
         if self.entity_source:
             return f"{self.entity_source}/{self.entity_attr}"
         return self.entity_attr
+
+    def is_remote_control_enabled(self) -> bool:
+        """Check if remote control is enabled for this appliance.
+
+        Returns True if remote control status contains 'ENABLED'
+        (including 'NOT_SAFETY_RELEVANT_ENABLED') or is None.
+        """
+        if not hasattr(self, "appliance_status") or not self.appliance_status:
+            return False
+
+        # Check for remoteControl in the appliance status
+        remote_control_status = self.appliance_status.get("remoteControl")
+        if remote_control_status is None:
+            # Also check in properties.reported
+            reported = self.appliance_status.get("properties", {}).get("reported", {})
+            remote_control_status = reported.get("remoteControl")
+
+        _LOGGER.debug(
+            "Remote control status for appliance %s: %s",
+            self.pnc_id,
+            remote_control_status,
+        )
+
+        # Allow None as a valid enabled state (some appliances don't report remoteControl)
+        if remote_control_status is None:
+            return True
+
+        if remote_control_status:
+            result = "ENABLED" in str(remote_control_status) and "DISABLED" not in str(
+                remote_control_status
+            )
+            _LOGGER.debug(
+                "Remote control enabled check for %s: %s -> %s",
+                self.pnc_id,
+                remote_control_status,
+                result,
+            )
+            return result
+
+        # If no remote control status found, assume it's enabled
+        return True
 
     @property
     def catalog_entry(self) -> ElectroluxDevice | None:
@@ -333,3 +516,21 @@ class ElectroluxEntity(CoordinatorEntity):
     #         "device_class": str(self.device_class),
     #         "capability": str(self.capability),
     #     }
+
+    async def _rate_limit_command(self) -> None:
+        """Enforce minimum interval between commands."""
+        import time
+
+        now = time.time()
+        time_since_last = now - self._last_command_time
+
+        if time_since_last < self._min_command_interval:
+            wait_time = self._min_command_interval - time_since_last
+            _LOGGER.debug(
+                "Rate limiting command for %s, waiting %.2fs",
+                self.entity_attr,
+                wait_time,
+            )
+            await asyncio.sleep(wait_time)
+
+        self._last_command_time = time.time()

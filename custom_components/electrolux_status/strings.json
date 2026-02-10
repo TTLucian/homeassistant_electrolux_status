@@ -51,5 +51,11 @@
     "error": {
       "invalid_auth": "Invalid API credentials. Please check your API Key, Access Token, and Refresh Token."
     }
+  },
+  "issues": {
+    "invalid_refresh_token": {
+      "title": "Electrolux authentication problem",
+      "description": "The Electrolux integration failed to refresh API tokens: {message}. Please reauthenticate via the integration options to restore functionality."
+    }
   }
 }

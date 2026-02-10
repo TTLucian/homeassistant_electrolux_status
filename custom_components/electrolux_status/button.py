@@ -1,19 +1,24 @@
 """Button platform for Electrolux Status."""
 
+import hashlib
 import logging
 from typing import Any
 
-from homeassistant.components.button import ButtonEntity
+from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import BUTTON, DOMAIN, icon_mapping
+from .const import BUTTON, CONF_API_KEY, DOMAIN, icon_mapping
 from .entity import ElectroluxEntity
 from .model import ElectroluxDevice
-from .util import ElectroluxApiClient
+from .util import (
+    AuthenticationError,
+    ElectroluxApiClient,
+    map_command_error_to_home_assistant_error,
+)
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -80,22 +85,49 @@ class ElectroluxButton(ElectroluxEntity, ButtonEntity):
 
     @property
     def entity_domain(self):
-        """Enitity domain for the entry. Used for consistent entity_id."""
+        """Entity domain for the entry. Used for consistent entity_id."""
         return BUTTON
+
+    @property
+    def device_class(self) -> ButtonDeviceClass | None:
+        """Return the device class for the button entity."""
+        if self._catalog_entry and hasattr(self._catalog_entry, "device_class"):
+            device_class = self._catalog_entry.device_class
+            if isinstance(device_class, ButtonDeviceClass):
+                return device_class
+        return self._device_class
 
     @property
     def unique_id(self) -> str:
         """Return a unique ID to use for this entity."""
-        return f"{self.config_entry.entry_id}-{self.val_to_send}-{self.entity_attr}-{self.entity_source}-{self.pnc_id}"
+        # Use stable unique_id based on API key hash, including val_to_send for button differentiation
+        api_key = self.config_entry.data.get(CONF_API_KEY, "")
+        api_key_hash = (
+            hashlib.sha256(api_key.encode()).hexdigest()[:16] if api_key else "unknown"
+        )
+        # Normalize entity_attr by removing fPPN prefix for consistent unique_ids
+        normalized_attr = self.entity_attr.lower()
+        if normalized_attr.startswith("fppn_"):
+            normalized_attr = normalized_attr.replace("fppn_", "").strip("_")
+        elif normalized_attr.startswith("fppn"):
+            normalized_attr = normalized_attr.replace("fppn", "").strip("_")
+        else:
+            normalized_attr = normalized_attr.strip("_")
+        return f"{api_key_hash}-{normalized_attr}-{self.val_to_send}-{self.entity_source or 'root'}-{self.pnc_id}"
 
     @property
     def name(self) -> str:
         """Return the name of the sensor."""
         name = self._name
         if self.catalog_entry and self.catalog_entry.friendly_name:
-            name = (
-                f"{self.get_appliance.name} {self.catalog_entry.friendly_name.lower()}"
-            )
+            # Get appliance name from coordinator data
+            appliances = self.coordinator.data.get("appliances", None)
+            if appliances:
+                appliance = appliances.get_appliance(self.pnc_id)
+                if appliance:
+                    name = (
+                        f"{appliance.name} {self.catalog_entry.friendly_name.lower()}"
+                    )
         # Get the last word from the 'name' variable
         # and compare to the command we are sending duplicate names
         # "air filter state reset reset" for instance
@@ -113,24 +145,15 @@ class ElectroluxButton(ElectroluxEntity, ButtonEntity):
 
     async def send_command(self) -> bool:
         """Send a command to the device."""
-        # Check if remote control is enabled
-        remote_control = (
-            self.appliance_status.get("properties", {})
-            .get("reported", {})
-            .get("remoteControl")
-        )
-        if remote_control is not None and remote_control not in [
-            "ENABLED",
-            "NOT_SAFETY_RELEVANT_ENABLED",
-        ]:
+        # Check if remote control is enabled before sending command
+        if not self.is_remote_control_enabled():
             _LOGGER.warning(
-                "Cannot send command %s for appliance %s: remote control is %s",
-                self.val_to_send,
+                "Remote control is disabled for appliance %s, cannot execute command for %s",
                 self.pnc_id,
-                remote_control,
+                self.entity_attr,
             )
             raise HomeAssistantError(
-                f"Remote control disabled (status: {remote_control})"
+                "Remote control is disabled for this appliance. Please check the appliance settings."
             )
 
         client: ElectroluxApiClient = self.api
@@ -138,11 +161,16 @@ class ElectroluxButton(ElectroluxEntity, ButtonEntity):
         command: dict[str, Any]
         if self.entity_source:
             if self.entity_source == "userSelections":
+                # Safer access to avoid KeyError if userSelections is missing
+                reported = (
+                    self.appliance_status.get("properties", {}).get("reported", {})
+                    if self.appliance_status
+                    else {}
+                )
+                program_uid = reported.get("userSelections", {}).get("programUID")
                 command = {
                     self.entity_source: {
-                        "programUID": self.appliance_status["properties"]["reported"][
-                            "userSelections"
-                        ]["programUID"],
+                        "programUID": program_uid,
                         self.entity_attr: value,
                     },
                 }
@@ -153,17 +181,21 @@ class ElectroluxButton(ElectroluxEntity, ButtonEntity):
         _LOGGER.debug("Electrolux send command %s", command)
         try:
             result = await client.execute_appliance_command(self.pnc_id, command)
+        except AuthenticationError as auth_ex:
+            # Handle authentication errors by triggering reauthentication
+            await self.coordinator.handle_authentication_error(auth_ex)
         except Exception as ex:
-            error_msg = str(ex).lower()
-            if "disconnected" in error_msg or "command_validation_error" in error_msg:
-                raise HomeAssistantError("Appliance is disconnected or not available")
-            raise
+            # Use shared error mapping for all errors
+            raise map_command_error_to_home_assistant_error(
+                ex, self.entity_attr, _LOGGER
+            ) from ex
         _LOGGER.debug("Electrolux send command result %s", result)
         return True
 
     async def async_press(self) -> None:
         """Execute a button press."""
         await self.send_command()
+        await self.coordinator.async_request_refresh()
         # await self.hass.async_add_executor_job(self.send_command)
         # if self.entity_attr == "ExecuteCommand":
         #     await self.hass.async_add_executor_job(self.coordinator.api.setHacl, self.get_appliance.pnc_id, "0x0403", self.val_to_send, self.entity_source)

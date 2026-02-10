@@ -13,7 +13,8 @@ NUMBER = Platform.NUMBER
 SELECT = Platform.SELECT
 SENSOR = Platform.SENSOR
 SWITCH = Platform.SWITCH
-PLATFORMS = [BINARY_SENSOR, BUTTON, NUMBER, SELECT, SENSOR, SWITCH]
+TEXT = Platform.TEXT
+PLATFORMS = [BINARY_SENSOR, BUTTON, NUMBER, SELECT, SENSOR, SWITCH, TEXT]
 
 # Configuration and options
 CONF_NOTIFICATION_DEFAULT = "notifications"
@@ -31,7 +32,7 @@ DEFAULT_WEBSOCKET_RENEWAL_DELAY = (
 # these are attributes that appear in the state file but not in the capabilities.
 # defining them here and in the catalog will allow these devices to be added dynamically
 STATIC_ATTRIBUTES = [
-    "connectivityState",
+    "connectionState",
     "networkInterface/linkQualityIndicator",
     "applianceMode",
 ]
@@ -55,6 +56,7 @@ ATTRIBUTES_BLACKLIST: list[str] = [
     "coolingValveState",
     "networkInterface",
     "temperatureRepresentation",
+    "^fPPN_OV.+",
 ]
 
 ATTRIBUTES_WHITELIST: list[str] = [".*waterUsage", ".*tankAReserve", ".*tankBReserve"]
