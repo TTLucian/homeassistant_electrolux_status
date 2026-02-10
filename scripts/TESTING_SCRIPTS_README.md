@@ -2,7 +2,7 @@
 
 This directory contains two Python scripts designed to help with testing and development of the Electrolux Status Home Assistant integration. These scripts allow you to interact directly with the Electrolux API to inspect appliance details and test commands.
 
-## Note: If you regenerate api key and tokens in electrolux api portal for use these scripts, the integration most likely must be reauthenticated with newly generated credentials
+## Note: If you regenerate api key and tokens in electrolux api portal for use with these scripts, the integration most likely must be reauthenticated with newly generated credentials
 
 ## 📋 Scripts Overview
 
